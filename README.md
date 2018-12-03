@@ -1,2 +1,2 @@
 # package-build-controller
-Openshift controller to Build tensorlfow, numpy packages
+Openshift controller to Build tensorflow, numpy packages

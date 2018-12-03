@@ -1,0 +1,28 @@
+{
+  "3.6": {
+    "Fedora28": {
+      "S2I_IMAGE": "registry.fedoraproject.org/f28/s2i-core",
+      "BAZEL_VERSION": "0.15.0",
+      "TF_NEED_CUDA": "0",
+      "RESOURCE_LIMITS_CPU": "4",
+      "RESOURCE_LIMITS_MEMORY": "8Gi",
+      "CUSTOM_BUILD": "bazel build --copt=-mavx --copt=-mavx2 --copt=-mfma --copt=-mfpmath=both --copt=-msse4.2 --copt=-march=nocona  --copt=-mtune=core-avx2  --copt=-O2  --cxxopt='-D_GLIBCXX_USE_CXX11_ABI=0' --local_resources 2048,2.0,1.0 --verbose_failures //tensorflow/tools/pip_package:build_pip_package"
+    },
+    "RHEL75": {
+      "S2I_IMAGE": "registry.access.redhat.com/rhscl/s2i-core-rhel7",
+      "BAZEL_VERSION": "0.15.0",
+      "TF_NEED_CUDA": "0",
+      "RESOURCE_LIMITS_CPU": "4",
+      "RESOURCE_LIMITS_MEMORY": "8Gi",
+      "CUSTOM_BUILD": "bazel build --copt=-mavx --copt=-mavx2 --copt=-mfma --copt=-mfpmath=both --copt=-msse4.2 --copt=-march=nocona  --copt=-mtune=core-avx2  --copt=-O2  --cxxopt='-D_GLIBCXX_USE_CXX11_ABI=0' --local_resources 2048,2.0,1.0 --verbose_failures //tensorflow/tools/pip_package:build_pip_package"
+    },
+    "Centos7": {
+      "S2I_IMAGE": "openshift/base-centos7",
+      "BAZEL_VERSION": "0.15.0",
+      "TF_NEED_CUDA": "0",
+      "RESOURCE_LIMITS_CPU": "4",
+      "RESOURCE_LIMITS_MEMORY": "8Gi",
+      "CUSTOM_BUILD": "bazel build --copt=-mavx --copt=-mavx2 --copt=-mfma --copt=-march=nocona  --copt=-mtune=core-avx2 --copt=-ftree-vectorize --copt=-fPIC --copt=-fstack-protector-strong   --copt=-O2  --cxxopt=-fvisibility-inlines-hidden  --cxxopt=-fmessage-length=0  --linkopt=-zrelro  --linkopt=-znow  --copt=-mfpmath=both  --local_resources 4096,4.0,1.0  --cxxopt='-D_GLIBCXX_USE_CXX11_ABI=0' --verbose_failures  //tensorflow/tools/pip_package:build_pip_package"
+    }
+  }
+}
