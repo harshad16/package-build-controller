@@ -1,6 +1,6 @@
 import requests
-from .const import *
-from .utils import get_param
+from misc.const import *
+from misc.utils import get_param
 
 
 def fill_imagestream_template(ims_name):

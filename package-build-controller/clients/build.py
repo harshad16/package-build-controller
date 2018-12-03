@@ -2,7 +2,7 @@
 # Packages
 import urllib3
 import requests
-from .const import *
+from misc.const import *
 import logging
 
 def get_imagestream_endp(req_url, namespace, imagestream=None):

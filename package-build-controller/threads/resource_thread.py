@@ -1,9 +1,9 @@
 import logging
-from .const import OCP_URL, HEADERS, NAMESPACE
-from .tensorflow_template import trigger_build
-from .utils import get_job_status
-from .build import get_buildconfig, create_buildconfig, get_imagestream, create_imagestream, get_build
-from .jobs import get_job, create_job, delete_job
+from misc.const import OCP_URL, HEADERS, NAMESPACE
+from plugins.tensorflow_template import trigger_build
+from misc.utils import get_job_status
+from clients.build import get_buildconfig, create_buildconfig, get_imagestream, create_imagestream, get_build
+from clients.jobs import get_job, create_job, delete_job
 
 
 def process_taskq(task_q, global_count, object_map):

@@ -1,10 +1,10 @@
 import logging
-from .resource_watch import test_endpoint
-from .build import get_buildconfig, get_build, get_build_logs
-from .const import OCP_URL, HEADERS, NAMESPACE, ACCESS_TOKEN, PROCESS_RESOURCES, TENSORFLOW_BUILD_IMAGE,\
+from clients.resource_watch import test_endpoint
+from clients.build import get_buildconfig, get_build, get_build_logs
+from misc.const import OCP_URL, HEADERS, NAMESPACE, ACCESS_TOKEN, PROCESS_RESOURCES, TENSORFLOW_BUILD_IMAGE,\
     TENSORFLOW_BUILD_JOB
-from .jobs import get_job
-from .utils import is_value_in_label, get_value_in_label, get_job_status, get_build_status
+from clients.jobs import get_job
+from misc.utils import is_value_in_label, get_value_in_label, get_job_status, get_build_status
 
 
 #TODO remove build_config_map, job_map
@@ -200,7 +200,7 @@ def process_events(event, resource, bloom, object_map, task_q, global_count):
 
 def event_loop_init(bloom, object_map, task_q, global_count):
     builds = "builds"
-    past_builds = resource_watch.test_endpoint(host=OCP_URL, sa_token=ACCESS_TOKEN, namespace=NAMESPACE,
+    past_builds = test_endpoint(host=OCP_URL, sa_token=ACCESS_TOKEN, namespace=NAMESPACE,
                                                resource=builds)
     logging.debug("PAST BUILDS : {}".format(len(past_builds.json()["items"])))
     for pbuild in past_builds.json()["items"]:

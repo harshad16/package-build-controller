@@ -4,7 +4,7 @@ import logging
 import requests
 import urllib3
 from pybloom import BloomFilter
-from .utils import get_api
+from misc.utils import get_api
 
 
 def get_api_url(host, namespace, resource, bool_watch=True):
@@ -116,24 +116,24 @@ def stream(host, namespace, resource, sa_token, tls_verify=False):
 
 
 
-#
-# if __name__ == '__main__':
-#     logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s")
-#     urllib3.disable_warnings()
-#     bloom = BloomFilter(10000, 0.001)
-#
-#     # resp = test_endpoint(host=OCP_URL, sa_token=SA_TOKEN, namespace=NAMESPACE, resource="builds")
-#     # print(resp.json())
-#
-#
-#     # for event, x in stream(host=OCP_URL, sa_token=SA_TOKEN, namespace=NAMESPACE, resource="events"):
-#     #     if x!= -1:
-#     #         m, c = add_event(event=event)
-#     #         print(m , c)
-#
-#     # for resource, x in stream(host=OCP_URL, sa_token=SA_TOKEN, namespace=NAMESPACE, resource="builds"):
-#     #     if x!= -1:
-#     #         m, c = add_resource(event=resource)
-#     #         print(m , c)
-#
-#     #event_loop(bloom=bloom, resource="builds")
+
+if __name__ == '__main__':
+    logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s")
+    urllib3.disable_warnings()
+    bloom = BloomFilter(10000, 0.001)
+
+    # resp = test_endpoint(host=OCP_URL, sa_token=SA_TOKEN, namespace=NAMESPACE, resource="builds")
+    # print(resp.json())
+
+
+    # for event, x in stream(host=OCP_URL, sa_token=SA_TOKEN, namespace=NAMESPACE, resource="events"):
+    #     if x!= -1:
+    #         m, c = add_event(event=event)
+    #         print(m , c)
+
+    # for resource, x in stream(host=OCP_URL, sa_token=SA_TOKEN, namespace=NAMESPACE, resource="builds"):
+    #     if x!= -1:
+    #         m, c = add_resource(event=resource)
+    #         print(m , c)
+
+    #event_loop(bloom=bloom, resource="builds")

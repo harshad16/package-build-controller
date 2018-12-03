@@ -1,7 +1,7 @@
 import logging
 import time
 import requests
-from .const import OCP_URL, HEADERS, NAMESPACE, MIN_MEMORY, MIN_CPU
+from misc.const import OCP_URL, HEADERS, NAMESPACE, MIN_MEMORY, MIN_CPU
 
 
 def process_quota(quota_name, quota_event, task_q):

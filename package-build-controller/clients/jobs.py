@@ -3,7 +3,7 @@
 import urllib3
 import requests
 import logging
-from .const import *
+from misc.const import *
 
 
 def get_job_endpoint(req_url, namespace, job_name=None):

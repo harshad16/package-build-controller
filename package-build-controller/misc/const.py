@@ -2,7 +2,7 @@
 # OCP Connection
 DEFAULT_QUOTA_NAME = "thoth-prod-tensorflow-quota"
 NAMESPACE = 'thoth-prod-tensorflow'  # set default inplace default quotes
-OCP_URL = ''
+OCP_URL = 'https://paas.upshift.redhat.com:443'
 ACCESS_TOKEN = ''
 HEADERS = {
     'Content-Type': 'application/json',

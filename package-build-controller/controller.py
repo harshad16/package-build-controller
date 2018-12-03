@@ -7,14 +7,14 @@ from queue import Queue
 import urllib3
 from pybloom import BloomFilter
 
-from .resource_watch import stream
-from .build import create_imagestream, get_imagestream
-from .const import QUOTA_NAME, OCP_URL, ACCESS_TOKEN, NAMESPACE, VERSION, HEADERS
-from .event_thread import event_loop_init, process_events
-from .quota_thread import process_quota
-from .resource_thread import process_taskq
-from .tensorflow_template import fill_imagestream_template, fill_job_template, fill_buildconfig_template
-from .utils import load_json_file, check_none
+from clients.resource_watch import stream
+from clients.build import create_imagestream, get_imagestream
+from misc.const import QUOTA_NAME, OCP_URL, ACCESS_TOKEN, NAMESPACE, VERSION, HEADERS
+from threads.event_thread import event_loop_init, process_events
+from threads.quota_thread import process_quota
+from threads.resource_thread import process_taskq
+from plugins.tensorflow_template import fill_imagestream_template, fill_job_template, fill_buildconfig_template
+from misc.utils import load_json_file, check_none
 
 urllib3.disable_warnings()
 
