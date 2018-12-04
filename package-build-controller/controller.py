@@ -1,66 +1,47 @@
+#!/usr/bin/env python3
+# package-build-controller
+# Copyright(C) 2018 Subin M
+#
+# This program is free software: you can redistribute it and / or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+"""package-build-controller"""
+
 import logging
 import os
 import threading
 import time
+import json
 from queue import Queue
 
 import urllib3
+from kubernetes import client
+from kubernetes.config.incluster_config import InClusterConfigLoader
+from openshift.dynamic import DynamicClient
 from pybloom import BloomFilter
 
-from clients.resource_watch import stream
 from clients.build import create_imagestream, get_imagestream
-from misc.const import QUOTA_NAME, OCP_URL, ACCESS_TOKEN, NAMESPACE, VERSION, HEADERS
+from clients.resource_watch import stream
+from misc.const import DEFAULT_QUOTA_NAME, DEFAULT_IMAGE_VERSION, ENV_NAMESPACE_FILE, ENV_PLUGIN_CONFIG_FILE, \
+    ENV_BUILD_MAP
+from misc.utils import load_json_file, ResourceCounter, get_param, \
+    _get_incluster_ca_file, _get_incluster_token_file, get_header, get_namespace, get_json_from_file
+from plugins.tensorflow_template import TensorflowBuildPlugin
 from threads.event_thread import event_loop_init, process_events
 from threads.quota_thread import process_quota
 from threads.resource_thread import process_taskq
-from plugins.tensorflow_template import fill_imagestream_template, fill_job_template, fill_buildconfig_template
-from misc.utils import load_json_file, check_none
 
 urllib3.disable_warnings()
-
-CONFIG_FILE = "./config.json"
-
-
-class ResourceCounter:
-    """Thread-safe incrementing counter. """
-    def __init__(self, initial=0):
-        """Initialize a counter to given initial value (default 0)."""
-        self.value = initial
-        self._lock = threading.Lock()
-
-    def decrement(self, num=1):
-        """Decrement the counter by num (default 1) and return the
-        new value.
-        """
-        with self._lock:
-            self.value = self.value - num
-            return self.value
-
-    def increment(self, num=1):
-        """Increment the counter by num (default 1) and return the
-        new value.
-        """
-        with self._lock:
-            self.value = self.value + num
-            return self.value
-
-    def get_val(self):
-        """Get value.
-        """
-        with self._lock:
-            return self.value
-
-    def set_val(self, num):
-        """Set value and return the new value.
-        """
-        with self._lock:
-            self.value = num
-            return self.value
-
-    def __str__(self):
-        """string representation of value
-        """
-        return str(self.value)
 
 
 def create_resource(quota_avail_event, consumer_done, task_q, global_count, object_map):
@@ -91,14 +72,14 @@ def create_resource(quota_avail_event, consumer_done, task_q, global_count, obje
                 # ================================
                 time.sleep(2)
             else:
-                #TODO EXIT when all resources are created successfully
+                # TODO EXIT when all resources are created successfully
                 if task_q.qsize() == 0 and global_count.get_val() == 0:
                     consumer_done.set()
                     _running = False
                     logging.debug('<< {} break loop-3. G:{}'.format(task_q.qsize(), global_count))
                     break
                 elif task_q.qsize() == 0 and global_count.get_val() != 0:
-                    #consumer_done.set()
+                    # consumer_done.set()
                     time.sleep(5)
                     quota_avail_event.notifyAll() #TODO this is set when a build/job fails
                     logging.debug('>> notify quota-thread:True G:{}'.format(global_count))
@@ -113,9 +94,9 @@ def create_resource(quota_avail_event, consumer_done, task_q, global_count, obje
 
 def quota_check(quota_name, quota_event, consumer_done, task_q, global_count):
     logging.info('STARTING')
-    logging.debug('QUOTA_NAME : {}'.format(quota_name))
+    logging.debug('quota_name : {}'.format(quota_name))
     _running = True
-    if QUOTA_NAME != "":
+    if quota_name != "":
         while _running and True:
             logging.debug('[{}] waiting for resource-thread. G:{}'.format(task_q.qsize(), global_count))
             if consumer_done.isSet():
@@ -143,11 +124,17 @@ def quota_check(quota_name, quota_event, consumer_done, task_q, global_count):
                 time.sleep(5)
     logging.info('[{}] EXITING'.format(task_q.qsize()))
 
+def load_plugin(name):
+    mod = __import__("plugin_%s" % name)
+    return mod
 
 def event_loop(resource, bloom, object_map, task_q, global_count):
     logging.info('STARTING')
     control = 1
     _running = True
+    host = client.Configuration().host
+    api_key = client.Configuration().api_key
+    namespace = get_namespace()
     # ----------------------------------
     #           event loop - init
     # ----------------------------------
@@ -157,8 +144,8 @@ def event_loop(resource, bloom, object_map, task_q, global_count):
     # ----------------------------------
     while _running and control != -1:
         try:
-            for event, code in stream(host=OCP_URL, resource=resource, sa_token=ACCESS_TOKEN,
-                                                     namespace=NAMESPACE, tls_verify=False):
+            for event, code in stream(host=host, resource=resource, authorization=api_key["authorization"],
+                                      namespace=namespace, tls_verify=False):
                 control = code
                 if type(event) is dict and control == 1:
                     # ----------------------------------
@@ -187,21 +174,42 @@ def event_loop(resource, bloom, object_map, task_q, global_count):
                 raise e
 
 
-def main():
+def main(token_file=None, cert_file=None, config_file=None):
     logging.basicConfig(level=logging.DEBUG, format='(%(threadName)-9s) %(message)s',)
-    #logging.getLogger("requests").setLevel(logging.CRITICAL)
+    # logging.getLogger("requests").setLevel(logging.CRITICAL)
     logging.getLogger("urllib3").setLevel(logging.CRITICAL)
 
-    login_checks = [check_none(v) for v in [OCP_URL, NAMESPACE, ACCESS_TOKEN]]
-    if not all(login_checks):
-        raise Exception("Release Trigger can't start! OCP credentials are not provided!")
+
+    kubernetes_verify_tls = get_param("KUBERNETES_VERIFY_TLS", None, "0")
+    kubernetes_verify_tls = bool(int(kubernetes_verify_tls))
+
+    # Load in-cluster configuration that is exposed by OpenShift/k8s configuration.
+    InClusterConfigLoader(token_filename=_get_incluster_token_file(token_file=token_file),
+                          cert_filename=_get_incluster_ca_file(ca_file=cert_file),
+                          environ=os.environ).load_and_set()
+
+    # We need to explicitly set whether we want to verify SSL/TLS connection to the master.
+    configuration = client.Configuration()
+    configuration.verify_ssl = kubernetes_verify_tls
+
+
+    ocp_client = DynamicClient(client.ApiClient(configuration=configuration))
+    host = client.Configuration().host
+    api_key = client.Configuration().api_key
+    namespace = get_namespace()
+
+
+    plugin = TensorflowBuildPlugin()
+    # login_checks = [check_none(v) for v in [OCP_URL, DEFAULT_NAMESPACE, ACCESS_TOKEN]]
+    # if not all(login_checks):
+    #     raise Exception("Release Trigger can't start! OCP credentials are not provided!")
 
     # TODO may use config.json or use CRD
     # Load BUILD_MAP
-    # TODO use configuration Object
-    build_map = os.getenv('BUILD_MAP', "{}")
+    build_map = os.getenv(ENV_BUILD_MAP, "{}")
+    build_map = json.loads(build_map)
     if build_map == "{}":
-        build_map = load_json_file(CONFIG_FILE)
+        build_map = load_json_file(config_file)
 
     if not build_map:
         raise Exception("No BUILD_MAP loaded.Nothing todo")
@@ -210,6 +218,7 @@ def main():
     buildconfig_list = []
     job_list = []
     object_map = {}
+    object_map.update(plugin.get_labels_dict())
 
     # Process BUILD_MAP
     for py_version, os_details in build_map.items():
@@ -218,7 +227,7 @@ def main():
                 application_build_name = "tf-{}-build-image-{}".format(os_version.lower(),
                                                                            py_version.replace('.', ''))
                 application_name = 'tf-{}-build-job-{}'.format(os_version.lower(), py_version.replace('.', ''))
-                builder_imagestream = '{}:{}'.format(application_build_name, VERSION)
+                builder_imagestream = '{}:{}'.format(application_build_name, DEFAULT_IMAGE_VERSION)
                 nb_python_ver = py_version
                 docker_file_path = 'Dockerfile.{}'.format(os_version.lower())
                 logging.debug("-------------------VARIABLES-------------------------")
@@ -231,17 +240,17 @@ def main():
                     # self.__dict__[var_key] = var_val
                     logging.debug("{}: {}".format(var_key, var_val))
                 logging.debug("-----------------------------------------------------")
-                imagestream_template = fill_imagestream_template(ims_name=application_build_name)
+                imagestream_template = plugin.fill_imagestream_template(ims_name=application_build_name)
                 imagestream_list.append({"kind": "ImageStream",
                                          "object": imagestream_template,
                                          "trigger_count": 0,
                                          "retrigger": False})
-                job_template = fill_job_template(application_name=application_name,
-                                                builder_imagesream=builder_imagestream,
-                                                nb_python_ver=nb_python_ver, image_details=image_details)
+                job_template = plugin.fill_job_template1(application_name=application_name,
+                                                 builder_imagestream=builder_imagestream,
+                                                 nb_python_ver=nb_python_ver, image_details=image_details)
                 object_map[application_name] = job_template
                 job_list.append(job_template)
-                build_template = fill_buildconfig_template(build_name=application_build_name,
+                build_template = plugin.fill_buildconfig_template1(build_name=application_build_name,
                                                            docker_file_path=docker_file_path,
                                                            nb_python_ver=nb_python_ver,
                                                            image_details=image_details)
@@ -261,12 +270,13 @@ def main():
 
     for ims in imagestream_list:
         ims_name = ims["object"]["metadata"]["name"]
-        ims_exist, ims_response = get_imagestream(req_url=OCP_URL, req_headers=HEADERS,
-                                                  namespace=NAMESPACE,
+
+        ims_exist, ims_response = get_imagestream(req_url=host, req_headers=get_header(api_key),
+                                                  namespace=namespace,
                                                   imagestream_name=ims_name)
         if not ims_exist:
-            generated_img = create_imagestream(req_url=OCP_URL, req_headers=HEADERS, namespace=NAMESPACE,
-                                                             imagestream=ims["object"])
+            generated_img = create_imagestream(req_url=host, req_headers=get_header(api_key), namespace=namespace,
+                                               imagestream=ims["object"])
             if not generated_img:
                 raise Exception('Image could not be generated for {}'.format(ims_name))
 
@@ -281,11 +291,12 @@ def main():
         task_q.put(y)
 
 
-    #global_count.set_val(task_q.qsize())
+    # global_count.set_val(task_q.qsize())
     logging.debug("Q size {}".format(task_q.qsize()))
+    quota_name = get_param("QUOTA_NAME", None, DEFAULT_QUOTA_NAME)
     quota_thread = threading.Thread(name='quota-thread',
                                     target=quota_check,
-                                    args=(QUOTA_NAME, quota_event, done_event, task_q, global_count))
+                                    args=(quota_name, quota_event, done_event, task_q, global_count))
 
 
     resource_thread = threading.Thread(name='resource-thread',
@@ -296,7 +307,7 @@ def main():
                                     target=event_loop,
                                     args=("events", bloom, object_map, task_q, global_count))
 
-    #event_thread.daemon = True
+    # event_thread.daemon = True
     event_thread.start()
     time.sleep(3)
     quota_thread.start()
@@ -307,8 +318,25 @@ def main():
     logging.debug('END')
 
 
+def dev_test():
+    dirname = os.path.dirname(__file__)
+    token_file = os.path.join(dirname, "../test/kubernetes.io/serviceaccount/token")
+    cert_file = os.path.join(dirname, "../test/kubernetes.io/serviceaccount/ca.crt")
+    namespace_file = os.path.join(dirname, "../test/kubernetes.io/serviceaccount/namespace")
+    plugin_config_file = os.path.join(dirname, "./plugins/tensorflow_config.json")
+    build_map = "./config.json"
+    # This is needed always in pod
+    in_pod_environ = {
+        "KUBERNETES_SERVICE_HOST": "paas.upshift.redhat.com",
+        "KUBERNETES_SERVICE_PORT": "443",
+        ENV_NAMESPACE_FILE: namespace_file,
+        ENV_PLUGIN_CONFIG_FILE: plugin_config_file,
+        ENV_BUILD_MAP: json.dumps(get_json_from_file(build_map)),
+    }
+    os.environ.update(in_pod_environ)
+    main(token_file=token_file, cert_file=cert_file, config_file=build_map)
+
 
 if __name__ == '__main__':
     main()
-
-
+    # dev_test()

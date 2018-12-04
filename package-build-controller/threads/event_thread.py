@@ -1,27 +1,32 @@
 import logging
 from clients.resource_watch import test_endpoint
 from clients.build import get_buildconfig, get_build, get_build_logs
-from misc.const import OCP_URL, HEADERS, NAMESPACE, ACCESS_TOKEN, PROCESS_RESOURCES, TENSORFLOW_BUILD_IMAGE,\
-    TENSORFLOW_BUILD_JOB
+from misc.const import PROCESS_RESOURCES, PLUGIN_BUILD_CONFIG_LABEL, PLUGIN_JOB_LABEL
 from clients.jobs import get_job
-from misc.utils import is_value_in_label, get_value_in_label, get_job_status, get_build_status
+from kubernetes import client
+from misc.utils import is_value_in_label, get_value_in_label, get_job_status,\
+    get_build_status, get_namespace, get_header
 
 
-#TODO remove build_config_map, job_map
 def process_new_event(resource_type, event_obj, bloom, object_map, task_q, global_count):
+    host = client.Configuration().host
+    api_key = client.Configuration().api_key
+    namespace = get_namespace()
     if resource_type == "builds":
         # =========================
         # Process Failed Builds(init)
         # =========================
-        if is_build_Failed(event_obj['status']):
+        if is_build_failed(event_obj['status']):
             build_config_name = get_value_in_label(event_obj['metadata']['labels'], "appName")
             build_ver = int(event_obj['metadata']['name'][-1:])
-            bc_exist, bc_response = get_buildconfig(req_url=OCP_URL, req_headers=HEADERS,
-                                               namespace=NAMESPACE, build_config_name=build_config_name)
+            bc_exist, bc_response = get_buildconfig(req_url=host, req_headers=get_header(api_key),
+                                                    namespace=namespace,
+                                                    build_config_name=build_config_name)
             if bc_exist:
                 latest_build_version = bc_response["status"]['lastVersion']
                 latest_build_id = int(latest_build_version)
-                b_exist, build_resp = get_build(req_url=OCP_URL, req_headers=HEADERS, namespace=NAMESPACE,
+                b_exist, build_resp = get_build(req_url=host, req_headers=get_header(api_key),
+                                                namespace=namespace,
                                                 build_name='{}-{}'.format(build_config_name, str(latest_build_id)))
                 # -----------------------------------------------------
                 # build_ver | latest_build_id |    ACTION
@@ -54,7 +59,7 @@ def process_new_event(resource_type, event_obj, bloom, object_map, task_q, globa
         # =========================
         # Process Failed Jobs(init)
         # =========================
-        if is_job_Failed(event_obj['status']):
+        if is_job_failed(event_obj['status']):
             logging.debug('Ignoring new Job event {}.Let Job EVENT do processing '.format(event_obj["metadata"]["name"]))
     elif resource_type == "events":
         if 'type' in event_obj:
@@ -80,19 +85,21 @@ def process_new_event(resource_type, event_obj, bloom, object_map, task_q, globa
                     bc_name = name.rsplit('-', 1)[0]
                     status = event_obj['object']['reason']
                     logging.debug("processing EVENTS Object of type Build; {} with status {}; BuildConfig {}".format(name, status, bc_name))
-                    bc_exist, bc_response = get_buildconfig(req_url=OCP_URL, req_headers=HEADERS, namespace=NAMESPACE,
-                                                       build_config_name=bc_name)
+                    bc_exist, bc_response = get_buildconfig(req_url=host, req_headers=get_header(api_key),
+                                                            namespace=namespace,
+                                                            build_config_name=bc_name)
 
                     if bc_exist:
                         latest_build_version = bc_response["status"]['lastVersion']
                         latest_build_id = int(latest_build_version)
-                        b_exist, build_resp = get_build(req_url=OCP_URL, req_headers=HEADERS, namespace=NAMESPACE,
-                                                  build_name='{}-{}'.format(bc_name, str(latest_build_id)))
+                        b_exist, build_resp = get_build(req_url=host, req_headers=get_header(api_key),
+                                                        namespace=namespace,
+                                                        build_name='{}-{}'.format(bc_name, str(latest_build_id)))
 
                         if b_exist:
                             build_status = build_resp.get('status')
                             # if latest build is failed retrigger
-                            if is_build_Failed(build_status):
+                            if is_build_failed(build_status):
                                 seen = bloom.add([build_status['config']['kind'], build_status['config']['name'],
                                                   build_status['phase']])
                                 if not seen:
@@ -107,7 +114,8 @@ def process_new_event(resource_type, event_obj, bloom, object_map, task_q, globa
                                 else:
                                     logging.debug('Build seen {} Failed-status is {}'.format(bc_name, build_status['phase']))
                                     build_pod_name = '{}-{}-build'.format(bc_name, latest_build_id)
-                                    pod_exist, logs = get_build_logs(req_url=OCP_URL, req_headers=HEADERS, namespace=NAMESPACE,
+                                    pod_exist, logs = get_build_logs(req_url=host, req_headers=get_header(api_key),
+                                                                     namespace=namespace,
                                                                      build_pod=build_pod_name)
                                     if pod_exist and 'gpg: keyserver receive failed: Keyserver error' in logs:
                                         obj = object_map[bc_name]
@@ -128,8 +136,9 @@ def process_new_event(resource_type, event_obj, bloom, object_map, task_q, globa
                                                                                                          bc_name, build_status['phase'],
                                                                                                          global_count))
                                     job_name = bc_name.replace("image", "job")
-                                    jexist, jresp = get_job(req_url=OCP_URL, req_headers=HEADERS, namespace=NAMESPACE,
-                                            job_name=job_name)
+                                    jexist, jresp = get_job(req_url=host, req_headers=get_header(api_key),
+                                                            namespace=namespace,
+                                                            job_name=job_name)
                                     if not jexist:
                                         if job_name in object_map:
                                             job = object_map[job_name]
@@ -150,8 +159,9 @@ def process_new_event(resource_type, event_obj, bloom, object_map, task_q, globa
                 # =========================
                 elif event_obj['object']['involvedObject']["kind"] == "Job":
                     job_name = event_obj['object']['involvedObject']['name']
-                    jbool, jresponse = get_job(req_url=OCP_URL, req_headers=HEADERS, namespace=NAMESPACE,
-                               job_name=job_name)
+                    jbool, jresponse = get_job(req_url=host, req_headers=get_header(api_key),
+                                               namespace=namespace,
+                                               job_name=job_name)
 
                     job_status = get_job_status(jresponse.get('status'))
 
@@ -170,10 +180,11 @@ def process_new_event(resource_type, event_obj, bloom, object_map, task_q, globa
                         # print(json.dumps(event, indent=4, sort_keys=True))
 
 
-def is_build_Failed(build_status):
+def is_build_failed(build_status):
     return build_status['phase'] != "Complete" and build_status['phase'] not in ["Pending", "Running", "BuildStarted"]
 
-def is_job_Failed(job_status):
+
+def is_job_failed(job_status):
     jresp_conditions = job_status.get("conditions", None)
     if jresp_conditions:
         jstatus_type = jresp_conditions[0]["type"]
@@ -200,30 +211,33 @@ def process_events(event, resource, bloom, object_map, task_q, global_count):
 
 def event_loop_init(bloom, object_map, task_q, global_count):
     builds = "builds"
-    past_builds = test_endpoint(host=OCP_URL, sa_token=ACCESS_TOKEN, namespace=NAMESPACE,
-                                               resource=builds)
+    host = client.Configuration().host
+    api_key = client.Configuration().api_key
+    namespace = get_namespace()
+    past_builds = test_endpoint(host=host, req_headers=get_header(api_key), namespace=namespace,
+                                resource=builds)
     logging.debug("PAST BUILDS : {}".format(len(past_builds.json()["items"])))
     for pbuild in past_builds.json()["items"]:
-        if is_value_in_label(pbuild['metadata']['labels'], TENSORFLOW_BUILD_IMAGE):
+        if is_value_in_label(pbuild['metadata']['labels'], object_map[PLUGIN_BUILD_CONFIG_LABEL]):
             mkey, mstatus, mcount = add_build_to_map(build=pbuild, map=bloom)
             logging.debug("BUILDS : seen-before: {} {} B:{} G:{}".format(mstatus, mkey, mcount, global_count))
             process_new_event("builds", pbuild, bloom, object_map, task_q, global_count)
     jobs = "jobs"
-    _, past_jobs = get_job(req_url=OCP_URL, req_headers=HEADERS, namespace=NAMESPACE)
+    _, past_jobs = get_job(req_url=host, req_headers=get_header(api_key), namespace=namespace)
     logging.debug("PAST Jobs : {}".format(len(past_jobs["items"])))
     for pjob in past_jobs["items"]:
-        if is_value_in_label(pjob['metadata']['labels'], TENSORFLOW_BUILD_JOB):
+        if is_value_in_label(pjob['metadata']['labels'], object_map[PLUGIN_JOB_LABEL]):
             mkey, mstatus, mcount = add_job_to_map(job=pjob, map=bloom)
             logging.debug("JOBS : seen-before: {} {} B:{} G:{}".format(mstatus, mkey, mcount, global_count))
             process_new_event("jobs", pjob, bloom, object_map, task_q, global_count)
 
 
 def add_job_to_map(job, map):
-    #print(event)
-
-    #print(message)
-    job_exists, jresponse = get_job(req_url=OCP_URL, req_headers=HEADERS, namespace=NAMESPACE,
-                               job_name=job['metadata']['name'])
+    host = client.Configuration().host
+    api_key = client.Configuration().api_key
+    namespace = get_namespace()
+    job_exists, jresponse = get_job(req_url=host, req_headers=get_header(api_key), namespace=namespace,
+                                    job_name=job['metadata']['name'])
     if job_exists:
         job_status = get_job_status(jresponse.get('status'))
         seen_before = map.add(["Job", job['metadata']['name'],
@@ -252,13 +266,13 @@ def add_job_to_map(job, map):
         return "", True, map.count
 
 def add_build_to_map(build, map):
-    #print(event)
+    # print(event)
     message = "Kind: {0}; Name: {1}; version:{2}; reason:{3}".format(
             "Build",
             build['metadata']['name'],
             build['metadata']['resourceVersion'],
             build['status']['phase'])
-    #print(message)
+    # print(message)
     status = map.add(["Build", build['metadata']['name'],
                       build['metadata']['resourceVersion'],
                       build['status']['phase']])
@@ -291,7 +305,10 @@ def add_event_to_map(event, resource, bloom):
 
 
 def add_event_build_to_map(bloom, event):
-    build_exist, bresponse = get_build(req_url=OCP_URL, req_headers=HEADERS, namespace=NAMESPACE,
+    host = client.Configuration().host
+    api_key = client.Configuration().api_key
+    namespace = get_namespace()
+    build_exist, bresponse = get_build(req_url=host, req_headers=get_header(api_key), namespace=namespace,
                                        build_name=event['object']['involvedObject']['name'])
     if not build_exist:
         message = "Kind: {0}; Name: {1}; version:{2}; reason:{3}".format(
@@ -317,7 +334,8 @@ def add_event_build_to_map(bloom, event):
                 event['object']['involvedObject']['name'],
                 event['object']['involvedObject']['resourceVersion'],
                 event['object']['reason'])
-            seen_before = bloom.add([event['object']['involvedObject']['kind'], event['object']['involvedObject']['name'],
+            seen_before = bloom.add([event['object']['involvedObject']['kind'],
+                                     event['object']['involvedObject']['name'],
                                      event['object']['involvedObject']['resourceVersion'],
                                      event['object']['reason']])
             return message, seen_before, bloom.count
@@ -326,7 +344,10 @@ def add_event_build_to_map(bloom, event):
 
 
 def add_event_job_to_map(bloom, event):
-    job_exist, jresponse = get_job(req_url=OCP_URL, req_headers=HEADERS, namespace=NAMESPACE,
+    host = client.Configuration().host
+    api_key = client.Configuration().api_key
+    namespace = get_namespace()
+    job_exist, jresponse = get_job(req_url=host, req_headers=get_header(api_key), namespace=namespace,
                                    job_name=event['object']['involvedObject']['name'])
     if not job_exist:
         message = "Kind: {0}; Name: {1}; version:{2}; reason:{3}".format(

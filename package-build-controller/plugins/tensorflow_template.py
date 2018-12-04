@@ -1,319 +1,358 @@
+import json
+
 import requests
-from misc.const import *
-from misc.utils import get_param
+
+from misc.const import GENERIC_WEBHOOK_SECRET, SOURCE_REPOSITORY, PLUGIN_JOB_LABEL,\
+    PLUGIN_BUILD_CONFIG_LABEL, ENV_PLUGIN_CONFIG_FILE
+from misc.utils import get_param_from_key, get_param_from_os
+
+PLUGIN_CONFIG_FILE = "./tensorflow_config.json"
+LABELS = {
+    PLUGIN_BUILD_CONFIG_LABEL: "tensorflow-build-image",
+    PLUGIN_JOB_LABEL: "tensorflow-build-job"
+}
 
 
-def fill_imagestream_template(ims_name):
-    imagestream = {
-        "kind": "ImageStream",
-        "apiVersion": "image.openshift.io/v1",
-        "metadata": {
-            "name": ims_name,
-            "labels": {
-                "appTypes": "tensorflow-build-image",
-                "appName": ims_name
-            }
-        },
-        "spec": {
-            "lookupPolicy": {
-                "local": True
+def get_config():
+    with open(PLUGIN_CONFIG_FILE) as f:
+        data = json.load(f)
+    return data
+
+
+class TensorflowBuildPlugin:
+    """TensorflowBuildPlugin. """
+    def __init__(self, config_file=ENV_PLUGIN_CONFIG_FILE):
+        self.config_file = get_param_from_os(config_file)
+        self.config = self.get_config()
+
+    def get_labels_dict(self):
+        return LABELS
+
+    def get_config(self):
+        try:
+            with open(self.config_file) as f:
+                data = json.load(f)
+                self.config = data
+                return self.config
+        except FileNotFoundError as exc:
+            raise FileNotFoundError("Unable to get plugin config file") from exc
+
+
+    def fill_imagestream_template(self, ims_name):
+        imagestream = {
+            "kind": "ImageStream",
+            "apiVersion": "image.openshift.io/v1",
+            "metadata": {
+                "name": ims_name,
+                "labels": {
+                    "appTypes": "tensorflow-build-image",
+                    "appName": ims_name
+                }
+            },
+            "spec": {
+                "lookupPolicy": {
+                    "local": True
+                }
             }
         }
-    }
-    return imagestream
+        return imagestream
 
-
-def fill_buildconfig_template(build_name, docker_file_path, nb_python_ver, image_details):
-    buildconfig = {
-        "kind": "BuildConfig",
-        "apiVersion": "build.openshift.io/v1",
-        "metadata": {
-            "name": build_name,
-            "labels": {
-                "appTypes": "tensorflow-build-image",
-                "appName": build_name
-            }
-        },
-        "spec": {
-            "triggers": [
-                {
-                    "type": "ConfigChange"
-                },
-                {
-                    "type": "ImageChange"
-                },
-                {
-                    "type": "Generic",
-                    "generic": {
-                        "secret": get_param("GENERIC_WEBHOOK_SECRET", image_details, GENERIC_WEBHOOK_SECRET),
-                        "allowEnv": True
-                    }
+    def fill_buildconfig_template1(self, build_name, docker_file_path, nb_python_ver, image_details):
+        config_copy = self.config.copy()
+        config_copy.update(image_details)
+        new_param_dict = config_copy
+        buildconfig = {
+            "kind": "BuildConfig",
+            "apiVersion": "build.openshift.io/v1",
+            "metadata": {
+                "name": build_name,
+                "labels": {
+                    "appTypes": "tensorflow-build-image",
+                    "appName": build_name
                 }
-            ],
-            "affinity": {
-                "nodeAffinity": {
-                    "requiredDuringSchedulingIgnoredDuringExecution": {
-                        "nodeSelectorTerms": [
+            },
+            "spec": {
+                "triggers": [
+                    {
+                        "type": "ConfigChange"
+                    },
+                    {
+                        "type": "ImageChange"
+                    },
+                    {
+                        "type": "Generic",
+                        "generic": {
+                            "secret": get_param_from_key("GENERIC_WEBHOOK_SECRET", new_param_dict),
+                            "allowEnv": True
+                        }
+                    }
+                ],
+                "affinity": {
+                    "nodeAffinity": {
+                        "requiredDuringSchedulingIgnoredDuringExecution": {
+                            "nodeSelectorTerms": [
+                                {
+                                    "matchExpressions": [
+                                        {
+                                            "key": "processor",
+                                            "operator": "In",
+                                            "values": [
+                                                "Intel-Xeon-Processor-Skylake-IBRS"
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                },
+                "source": {
+                    "type": "Git",
+                    "git": {
+                        "uri": get_param_from_key("SOURCE_REPOSITORY", new_param_dict),
+                        "ref": "master"
+                    }
+                },
+                "strategy": {
+                    "type": "Docker",
+                    "dockerStrategy": {
+                        "noCache": True,
+                        "dockerfilePath": docker_file_path,
+                        "from": {
+                            "kind": "DockerImage",
+                            "name": get_param_from_key("S2I_IMAGE", new_param_dict)
+                        },
+                        "env": [
                             {
-                                "matchExpressions": [
-                                    {
-                                        "key": "processor",
-                                        "operator": "In",
-                                        "values": [
-                                            "Intel-Xeon-Processor-Skylake-IBRS"
-                                        ]
-                                    }
-                                ]
+                                "name": "NB_PYTHON_VER",
+                                "value": nb_python_ver
+                            },
+                            {
+                                "name": "BAZEL_VERSION",
+                                "value":  get_param_from_key("BAZEL_VERSION", new_param_dict)
                             }
                         ]
                     }
-                }
-            },
-            "source": {
-                "type": "Git",
-                "git": {
-                    "uri": get_param("SOURCE_REPOSITORY", image_details, SOURCE_REPOSITORY),
-                    "ref": "master"
-                }
-            },
-            "strategy": {
-                "type": "Docker",
-                "dockerStrategy": {
-                    "noCache": True,
-                    "dockerfilePath": docker_file_path,
-                    "from": {
-                        "kind": "DockerImage",
-                        "name": get_param("S2I_IMAGE", image_details, None)
-                    },
-                    "env": [
-                        {
-                            "name": "NB_PYTHON_VER",
-                            "value": nb_python_ver
-                        },
-                        {
-                            "name": "BAZEL_VERSION",
-                            "value":  get_param("BAZEL_VERSION", image_details, None)
-                        }
-                    ]
-                }
-            },
-            "output": {
-                "to": {
-                    "kind": "ImageStreamTag",
-                    "name": build_name + ":" + get_param("VERSION", image_details, VERSION)
-                }
-            },
-            "resources": {
-                "limits": {
-                    "cpu": get_param("RESOURCE_LIMITS_CPU", image_details, RESOURCE_LIMITS_CPU),
-                    "memory": get_param("RESOURCE_LIMITS_MEMORY", image_details, RESOURCE_LIMITS_MEMORY),
                 },
-                "requests": {
-                    "cpu": get_param("RESOURCE_LIMITS_CPU", image_details, RESOURCE_LIMITS_CPU),
-                    "memory": get_param("RESOURCE_LIMITS_MEMORY", image_details, RESOURCE_LIMITS_MEMORY),
-                }
-            },
-            'successfulBuildsHistoryLimit': 2,
-            'failedBuildsHistoryLimit': 2
-        }
-    }
-    return buildconfig
-
-
-def fill_job_template(application_name, builder_imagesream, nb_python_ver, image_details):
-    job = {
-        "kind": "Job",
-        "apiVersion": "batch/v1",
-        "metadata": {
-            "name": application_name,
-            "labels": {
-                "appTypes": "tensorflow-build-job",
-                "appName": application_name
-            }
-        },
-        "spec": {
-            "backoffLimit": get_param("JOB_BACKOFF_LIMIT", image_details, JOB_BACKOFF_LIMIT),
-            "template": {
-                "metadata": {
-                    "labels": {
-                        "appTypes": "tensorflow-build-job",
-                        "deploymentconfig": application_name,
-                        "appName": application_name
+                "output": {
+                    "to": {
+                        "kind": "ImageStreamTag",
+                        "name": build_name + ":" + get_param_from_key("VERSION", new_param_dict)
                     }
                 },
-                "spec": {
-                    "containers": [
-                        {
-                            "env": [
-                                {
-                                    "name": "CUSTOM_BUILD",
-                                    "value": get_param("CUSTOM_BUILD", image_details, CUSTOM_BUILD)
+                "resources": {
+                    "limits": {
+                        "cpu": get_param_from_key("RESOURCE_LIMITS_CPU", new_param_dict),
+                        "memory": get_param_from_key("RESOURCE_LIMITS_MEMORY", new_param_dict),
+                    },
+                    "requests": {
+                        "cpu": get_param_from_key("RESOURCE_LIMITS_CPU", new_param_dict),
+                        "memory": get_param_from_key("RESOURCE_LIMITS_MEMORY", new_param_dict),
+                    }
+                },
+                'successfulBuildsHistoryLimit': 2,
+                'failedBuildsHistoryLimit': 2
+            }
+        }
+        return buildconfig
+
+    def fill_job_template1(self, application_name, builder_imagestream, nb_python_ver, image_details):
+        config_copy = self.config.copy()
+        config_copy.update(image_details)
+        new_param_dict = config_copy
+        job = {
+            "kind": "Job",
+            "apiVersion": "batch/v1",
+            "metadata": {
+                "name": application_name,
+                "labels": {
+                    "appTypes": "tensorflow-build-job",
+                    "appName": application_name
+                }
+            },
+            "spec": {
+                "backoffLimit": get_param_from_key("JOB_BACKOFF_LIMIT", new_param_dict),
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "appTypes": "tensorflow-build-job",
+                            "deploymentconfig": application_name,
+                            "appName": application_name
+                        }
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "env": [
+                                    {
+                                        "name": "CUSTOM_BUILD",
+                                        "value": get_param_from_key("CUSTOM_BUILD", new_param_dict)
+                                    },
+                                    {
+                                        "name": "BUILD_OPTS",
+                                        "value": get_param_from_key("BUILD_OPTS", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_CUDA_VERSION",
+                                        "value": get_param_from_key("TF_CUDA_VERSION", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_CUDA_COMPUTE_CAPABILITIES",
+                                        "value": get_param_from_key("TF_CUDA_COMPUTE_CAPABILITIES", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_CUDNN_VERSION",
+                                        "value": get_param_from_key("TF_CUDNN_VERSION", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_NEED_OPENCL_SYCL",
+                                        "value": get_param_from_key("TF_NEED_OPENCL_SYCL", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_CUDA_CLANG",
+                                        "value": get_param_from_key("TF_CUDA_CLANG", new_param_dict)
+                                    },
+                                    {
+                                        "name": "GCC_HOST_COMPILER_PATH",
+                                        "value": get_param_from_key("GCC_HOST_COMPILER_PATH", new_param_dict)
+                                    },
+                                    {
+                                        "name": "CUDA_TOOLKIT_PATH",
+                                        "value": get_param_from_key("CUDA_TOOLKIT_PATH", new_param_dict)
+                                    },
+                                    {
+                                        "name": "CUDNN_INSTALL_PATH",
+                                        "value": get_param_from_key("CUDNN_INSTALL_PATH", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_NEED_JEMALLOC",
+                                        "value": get_param_from_key("TF_NEED_JEMALLOC", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_NEED_GCP",
+                                        "value": get_param_from_key("TF_NEED_GCP", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_NEED_VERBS",
+                                        "value": get_param_from_key("TF_NEED_VERBS", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_NEED_HDFS",
+                                        "value": get_param_from_key("TF_NEED_HDFS", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_ENABLE_XLA",
+                                        "value": get_param_from_key("TF_ENABLE_XLA", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_NEED_OPENCL",
+                                        "value": get_param_from_key("TF_NEED_OPENCL", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_NEED_CUDA",
+                                        "value": get_param_from_key("TF_NEED_CUDA", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_NEED_MPI",
+                                        "value": get_param_from_key("TF_NEED_MPI", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_NEED_GDR",
+                                        "value": get_param_from_key("TF_NEED_GDR", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_NEED_S3",
+                                        "value": get_param_from_key("TF_NEED_S3", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_NEED_KAFKA",
+                                        "value": get_param_from_key("TF_NEED_KAFKA", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_NEED_OPENCL_SYCL",
+                                        "value": get_param_from_key("TF_NEED_OPENCL_SYCL", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_DOWNLOAD_CLANG",
+                                        "value": get_param_from_key("TF_DOWNLOAD_CLANG", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_SET_ANDROID_WORKSPACE",
+                                        "value": get_param_from_key("TF_SET_ANDROID_WORKSPACE", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_NEED_TENSORRT",
+                                        "value": get_param_from_key("TF_NEED_TENSORRT", new_param_dict)
+                                    },
+                                    {
+                                        "name": "NCCL_INSTALL_PATH",
+                                        "value": get_param_from_key("NCCL_INSTALL_PATH", new_param_dict)
+                                    },
+                                    {
+                                        "name": "NB_PYTHON_VER",
+                                        "value": nb_python_ver
+                                    },
+                                    {
+                                        "name": "BAZEL_VERSION",
+                                        "value": get_param_from_key("BAZEL_VERSION", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TF_GIT_BRANCH",
+                                        "value": get_param_from_key("TF_GIT_BRANCH", new_param_dict)
+                                    },
+                                    {
+                                        "name": "TEST_WHEEL_FILE",
+                                        "value": get_param_from_key("TEST_WHEEL_FILE", new_param_dict)
+                                    },
+                                    {
+                                        "name": "GIT_RELEASE_REPO",
+                                        "value": get_param_from_key("GIT_RELEASE_REPO", new_param_dict)
+                                    },
+                                    {
+                                        "name": "GIT_TOKEN",
+                                        "value": get_param_from_key("SESHETA_GITHUB_ACCESS_TOKEN", new_param_dict)
+                                    }
+                                ],
+                                "affinity": {
+                                    "nodeAffinity": {
+                                        "requiredDuringSchedulingIgnoredDuringExecution": {
+                                            "nodeSelectorTerms": [
+                                                {
+                                                    "matchExpressions": [
+                                                        {
+                                                            "key": "processor",
+                                                            "operator": "In",
+                                                            "values": [
+                                                                "Intel-Xeon-Processor-Skylake-IBRS"
+                                                            ]
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    }
                                 },
-                                {
-                                    "name": "BUILD_OPTS",
-                                    "value": get_param("BUILD_OPTS", image_details, BUILD_OPTS)
-                                },
-                                {
-                                    "name": "TF_CUDA_VERSION",
-                                    "value": get_param("TF_CUDA_VERSION", image_details, TF_CUDA_VERSION)
-                                },
-                                {
-                                    "name": "TF_CUDA_COMPUTE_CAPABILITIES",
-                                    "value": get_param("TF_CUDA_COMPUTE_CAPABILITIES", image_details, TF_CUDA_COMPUTE_CAPABILITIES)
-                                },
-                                {
-                                    "name": "TF_CUDNN_VERSION",
-                                    "value": get_param("TF_CUDNN_VERSION", image_details, TF_CUDNN_VERSION)
-                                },
-                                {
-                                    "name": "TF_NEED_OPENCL_SYCL",
-                                    "value": get_param("TF_NEED_OPENCL_SYCL", image_details, TF_NEED_OPENCL_SYCL)
-                                },
-                                {
-                                    "name": "TF_CUDA_CLANG",
-                                    "value": get_param("TF_CUDA_CLANG", image_details, TF_CUDA_CLANG)
-                                },
-                                {
-                                    "name": "GCC_HOST_COMPILER_PATH",
-                                    "value": get_param("GCC_HOST_COMPILER_PATH", image_details, GCC_HOST_COMPILER_PATH)
-                                },
-                                {
-                                    "name": "CUDA_TOOLKIT_PATH",
-                                    "value": get_param("CUDA_TOOLKIT_PATH", image_details, CUDA_TOOLKIT_PATH)
-                                },
-                                {
-                                    "name": "CUDNN_INSTALL_PATH",
-                                    "value": get_param("CUDNN_INSTALL_PATH", image_details, CUDNN_INSTALL_PATH)
-                                },
-                                {
-                                    "name": "TF_NEED_JEMALLOC",
-                                    "value": get_param("TF_NEED_JEMALLOC", image_details, TF_NEED_JEMALLOC)
-                                },
-                                {
-                                    "name": "TF_NEED_GCP",
-                                    "value": get_param("TF_NEED_GCP", image_details, TF_NEED_GCP)
-                                },
-                                {
-                                    "name": "TF_NEED_VERBS",
-                                    "value": get_param("TF_NEED_VERBS", image_details, TF_NEED_VERBS)
-                                },
-                                {
-                                    "name": "TF_NEED_HDFS",
-                                    "value": get_param("TF_NEED_HDFS", image_details, TF_NEED_HDFS)
-                                },
-                                {
-                                    "name": "TF_ENABLE_XLA",
-                                    "value": get_param("TF_ENABLE_XLA", image_details, TF_ENABLE_XLA)
-                                },
-                                {
-                                    "name": "TF_NEED_OPENCL",
-                                    "value": get_param("TF_NEED_OPENCL", image_details, TF_NEED_OPENCL)
-                                },
-                                {
-                                    "name": "TF_NEED_CUDA",
-                                    "value": get_param("TF_NEED_CUDA", image_details, TF_NEED_CUDA)
-                                },
-                                {
-                                    "name": "TF_NEED_MPI",
-                                    "value": get_param("TF_NEED_MPI", image_details, TF_NEED_MPI)
-                                },
-                                {
-                                    "name": "TF_NEED_GDR",
-                                    "value": get_param("TF_NEED_GDR", image_details, TF_NEED_GDR)
-                                },
-                                {
-                                    "name": "TF_NEED_S3",
-                                    "value": get_param("TF_NEED_S3", image_details, TF_NEED_S3)
-                                },
-                                {
-                                    "name": "TF_NEED_KAFKA",
-                                    "value": get_param("TF_NEED_KAFKA", image_details, TF_NEED_KAFKA)
-                                },
-                                {
-                                    "name": "TF_NEED_OPENCL_SYCL",
-                                    "value": get_param("TF_NEED_OPENCL_SYCL", image_details, TF_NEED_OPENCL_SYCL)
-                                },
-                                {
-                                    "name": "TF_DOWNLOAD_CLANG",
-                                    "value": get_param("TF_DOWNLOAD_CLANG", image_details, TF_DOWNLOAD_CLANG)
-                                },
-                                {
-                                    "name": "TF_SET_ANDROID_WORKSPACE",
-                                    "value": get_param("TF_SET_ANDROID_WORKSPACE", image_details, TF_SET_ANDROID_WORKSPACE)
-                                },
-                                {
-                                    "name": "TF_NEED_TENSORRT",
-                                    "value": get_param("TF_NEED_TENSORRT", image_details, TF_NEED_TENSORRT)
-                                },
-                                {
-                                    "name": "NCCL_INSTALL_PATH",
-                                    "value": get_param("NCCL_INSTALL_PATH", image_details, NCCL_INSTALL_PATH)
-                                },
-                                {
-                                    "name": "NB_PYTHON_VER",
-                                    "value": nb_python_ver
-                                },
-                                {
-                                    "name": "BAZEL_VERSION",
-                                    "value": get_param("BAZEL_VERSION", image_details, BAZEL_VERSION)
-                                },
-                                {
-                                    "name": "TF_GIT_BRANCH",
-                                    "value": get_param("TF_GIT_BRANCH", image_details, TF_GIT_BRANCH)
-                                },
-                                {
-                                    "name": "TEST_WHEEL_FILE",
-                                    "value": get_param("TEST_WHEEL_FILE", image_details, TEST_WHEEL_FILE)
-                                },
-                                {
-                                    "name": "GIT_RELEASE_REPO",
-                                    "value": get_param("GIT_RELEASE_REPO", image_details, GIT_RELEASE_REPO)
-                                },
-                                {
-                                    "name": "GIT_TOKEN",
-                                    "value": SESHETA_GITHUB_ACCESS_TOKEN
-                                }
-                            ],
-                            "affinity": {
-                                "nodeAffinity": {
-                                    "requiredDuringSchedulingIgnoredDuringExecution": {
-                                        "nodeSelectorTerms": [
-                                            {
-                                                "matchExpressions": [
-                                                    {
-                                                        "key": "processor",
-                                                        "operator": "In",
-                                                        "values": [
-                                                            "Intel-Xeon-Processor-Skylake-IBRS"
-                                                        ]
-                                                    }
-                                                ]
-                                            }
-                                        ]
+                                "name": application_name,
+                                "image": builder_imagestream,
+                                "command": ["/entrypoint", "/usr/libexec/s2i/run"],
+                                "resources": {
+                                    "limits": {
+                                        "cpu": get_param_from_key("RESOURCE_LIMITS_CPU", new_param_dict),
+                                        "memory": get_param_from_key("RESOURCE_LIMITS_MEMORY", new_param_dict),
+                                    },
+                                    "requests": {
+                                        "cpu": get_param_from_key("RESOURCE_LIMITS_CPU", new_param_dict),
+                                        "memory": get_param_from_key("RESOURCE_LIMITS_MEMORY", new_param_dict),
                                     }
                                 }
-                            },
-                            "name": application_name,
-                            "image": builder_imagesream,
-                            "command": ["/entrypoint", "/usr/libexec/s2i/run"],
-                            "resources": {
-                                "limits": {
-                                    "cpu": get_param("RESOURCE_LIMITS_CPU", image_details, RESOURCE_LIMITS_CPU),
-                                    "memory": get_param("RESOURCE_LIMITS_MEMORY", image_details, RESOURCE_LIMITS_MEMORY),
-                                },
-                                "requests": {
-                                    "cpu": get_param("RESOURCE_LIMITS_CPU", image_details, RESOURCE_LIMITS_CPU),
-                                    "memory": get_param("RESOURCE_LIMITS_MEMORY", image_details, RESOURCE_LIMITS_MEMORY),
-                                }
                             }
-                        }
-                    ],
-                    "restartPolicy": "Never"
+                        ],
+                        "restartPolicy": "Never"
+                    }
                 }
             }
         }
-    }
-    return job
+        return job
 
 
 def trigger_build(req_url, req_headers, namespace, build_resource):

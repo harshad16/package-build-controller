@@ -14,12 +14,11 @@ def get_api_url(host, namespace, resource, bool_watch=True):
         return "{}/{}/v1/namespaces/{}/{}".format(host, get_api(resource), namespace, resource)
 
 
-def test_endpoint(host, namespace, resource, sa_token, tls_verify=False):
+def test_endpoint(host, namespace, resource, req_headers, tls_verify=False):
     url = get_api_url(host, namespace, resource, bool_watch=False)
     print("test_endpoint url = {}".format(url))
-    # TODO try catch remove https
     test_req = requests.Request("GET", url,
-                                headers={'Authorization': 'Bearer {0}'.format(sa_token)},
+                                headers=req_headers,
                                 params=""
                                 ).prepare()
     session = requests.session()
@@ -30,13 +29,13 @@ def test_endpoint(host, namespace, resource, sa_token, tls_verify=False):
     return test_resp
 
 
-def stream(host, namespace, resource, sa_token, tls_verify=False):
+def stream(host, namespace, resource, authorization, tls_verify=False):
     url = get_api_url(host, namespace, resource, bool_watch=True)
     print("stream url = {}".format(url))
     start = datetime.datetime.now()
     session = requests.Session()
     req = requests.Request("GET", url,
-                           headers={'Authorization': 'Bearer {0}'.format(sa_token)},
+                           headers={"Authorization": authorization},
                            params=""
                            ).prepare()
 
@@ -46,14 +45,12 @@ def stream(host, namespace, resource, sa_token, tls_verify=False):
         raise Exception("Unable to contact OpenShift API at {0}. Message from server: {1}".format(url,
                                                                                                   resp.text))
     try:
-        lines = resp.iter_lines() #chunk_size=1
-        first_line = next(lines)
+        lines = resp.iter_lines()  # chunk_size=1
+        _ = next(lines)
         for line in lines:
             if line:
                 try:
                     yield json.loads(line.decode('utf-8')), 1
-                    # TODO: Use the specific exception type here.
-                    # TODO: Logging -> "No Json Object could be decoded."
                 except Exception as e:
                     raise Exception("Watcher error 1: {0}".format(e))
         return json.loads("{}"), -1
@@ -106,16 +103,6 @@ def stream(host, namespace, resource, sa_token, tls_verify=False):
   }
 }
 """
-# we process All NEW events.
-# never create any resources here
-
-
-# if object is not seen before return False
-# if object is seen before it return True
-
-
-
-
 
 if __name__ == '__main__':
     logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s")
@@ -124,8 +111,6 @@ if __name__ == '__main__':
 
     # resp = test_endpoint(host=OCP_URL, sa_token=SA_TOKEN, namespace=NAMESPACE, resource="builds")
     # print(resp.json())
-
-
     # for event, x in stream(host=OCP_URL, sa_token=SA_TOKEN, namespace=NAMESPACE, resource="events"):
     #     if x!= -1:
     #         m, c = add_event(event=event)
@@ -135,5 +120,4 @@ if __name__ == '__main__':
     #     if x!= -1:
     #         m, c = add_resource(event=resource)
     #         print(m , c)
-
-    #event_loop(bloom=bloom, resource="builds")
+    # event_loop(bloom=bloom, resource="builds")

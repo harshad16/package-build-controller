@@ -10,5 +10,6 @@ setup(name='package-build-controller',
       packages=['package-build-controller'],
       install_requires=[
             'pybloom-mirror',
+            'requests'
       ],
       zip_safe=False)

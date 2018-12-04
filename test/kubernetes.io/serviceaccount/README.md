@@ -1,8 +1,3 @@
-# package-build-controller
-Openshift controller to Build tensorflow, numpy packages
-
-
-
 ## Setup Dev Environment
 
 Before we can test locally, we need to install some dependencies and gather some information about our Cluster.
