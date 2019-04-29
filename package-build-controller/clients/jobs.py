@@ -5,10 +5,11 @@ import logging
 
 def get_job_endpoint(req_url, namespace, job_name=None):
     if job_name:
-        return '{}/apis/batch/v1/namespaces/{}/jobs/{}'.format(req_url, namespace,
-                                                               job_name)
+        return "{}/apis/batch/v1/namespaces/{}/jobs/{}".format(
+            req_url, namespace, job_name
+        )
     else:
-        return '{}/apis/batch/v1/namespaces/{}/jobs'.format(req_url, namespace)
+        return "{}/apis/batch/v1/namespaces/{}/jobs".format(req_url, namespace)
 
 
 def get_job(req_url, req_headers, namespace, job_name=None):
@@ -19,6 +20,15 @@ def get_job(req_url, req_headers, namespace, job_name=None):
         return True, response.json()
     else:
         # logging.error("Error for get_job GET request: {}".format(response.json()))
+        return False, response.json()
+
+
+def get_all_pods(req_url, req_headers, namespace):
+    endpoint = "{}/api/v1/namespaces/{}/pods".format(req_url, namespace)
+    response = requests.get(endpoint, headers=req_headers, verify=False)
+    if response.status_code == 200:
+        return True, response.json()
+    else:
         return False, response.json()
 
 
@@ -55,6 +65,21 @@ def update_job(req_url, req_headers, namespace, job, job_name):
         return False
 
 
-if __name__ == '__main__':
+def get_job_logs(req_url, req_headers, namespace, job_pod):
+    job_pod_endpoint = "{}/api/v1/namespaces/{}/pods/{}/log".format(
+        req_url, namespace, job_pod
+    )
+    response = requests.get(job_pod_endpoint, headers=req_headers, verify=False)
+    if response.status_code == 200:
+        with open("{}.txt".format(job_pod), "w") as f:
+            f.write(response.text)
+        logging.debug("Log of {} {}".format(job_pod, response.text))
+        return True, response.text
+    else:
+        logging.error("Error for job pod log GET request: ".format(response.text))
+        return False, response.text
+
+
+if __name__ == "__main__":
     urllib3.disable_warnings()
     # get_job(OCP_URL, HEADERS, DEFAULT_NAMESPACE, job_name="tf-fedora27-build-job-27")

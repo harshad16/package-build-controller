@@ -32,10 +32,23 @@ from pybloom import BloomFilter
 
 from clients.build import create_imagestream, get_imagestream
 from clients.resource_watch import stream
-from misc.const import DEFAULT_QUOTA_NAME, DEFAULT_IMAGE_VERSION, ENV_NAMESPACE_FILE, ENV_PLUGIN_CONFIG_FILE, \
-    ENV_BUILD_MAP
-from misc.utils import load_json_file, ResourceCounter, get_param, \
-    _get_incluster_ca_file, _get_incluster_token_file, get_header, get_namespace, get_json_from_file
+from misc.const import (
+    DEFAULT_QUOTA_NAME,
+    DEFAULT_IMAGE_VERSION,
+    ENV_NAMESPACE_FILE,
+    ENV_PLUGIN_CONFIG_FILE,
+    ENV_BUILD_MAP,
+)
+from misc.utils import (
+    load_json_file,
+    ResourceCounter,
+    get_param,
+    _get_incluster_ca_file,
+    _get_incluster_token_file,
+    get_header,
+    get_namespace,
+    get_json_from_file,
+)
 from plugins.tensorflow_template import TensorflowBuildPlugin
 from threads.event_thread import event_loop_init, process_events
 from threads.quota_thread import process_quota
@@ -45,28 +58,36 @@ urllib3.disable_warnings()
 
 
 def create_resource(quota_avail_event, consumer_done, task_q, global_count, object_map):
-    logging.info('STARTING...')
+    logging.info("STARTING...")
     _running = True
     while _running and True:
-        logging.debug('<< {} waiting for quota-thread. G:{}'.format(task_q.qsize(), global_count))
+        logging.debug(
+            "<< {} waiting for quota-thread. G:{}".format(task_q.qsize(), global_count)
+        )
         if task_q.qsize() == 0 and global_count.get_val() == 0:
             consumer_done.set()
             _running = False
-            logging.debug('<< {} break loop-1. G:{}'.format(task_q.qsize(), global_count))
+            logging.debug(
+                "<< {} break loop-1. G:{}".format(task_q.qsize(), global_count)
+            )
             break
         with quota_avail_event:
-            quota_available = quota_avail_event.wait(2) # waiting from quota-thread
-            logging.debug('<< {} waiting for quota-thread DONE. quota_available: {} G:{}'.format(task_q.qsize(),
-                                                                                            quota_available,
-                                                                                            global_count))
+            quota_available = quota_avail_event.wait(2)  # waiting from quota-thread
+            logging.debug(
+                "<< {} waiting for quota-thread DONE. quota_available: {} G:{}".format(
+                    task_q.qsize(), quota_available, global_count
+                )
+            )
 
             if task_q.qsize() == 0 and global_count.get_val() == 0:
                 consumer_done.set()
                 _running = False
-                logging.debug('<< {} break loop-2. G:{}'.format(task_q.qsize(), global_count))
+                logging.debug(
+                    "<< {} break loop-2. G:{}".format(task_q.qsize(), global_count)
+                )
                 break
             if quota_available:
-                logging.debug('{} processing STARTED.'.format(task_q.qsize()))
+                logging.debug("{} processing STARTED.".format(task_q.qsize()))
                 # ================================
                 process_taskq(task_q, global_count, object_map)
                 # ================================
@@ -76,36 +97,52 @@ def create_resource(quota_avail_event, consumer_done, task_q, global_count, obje
                 if task_q.qsize() == 0 and global_count.get_val() == 0:
                     consumer_done.set()
                     _running = False
-                    logging.debug('<< {} break loop-3. G:{}'.format(task_q.qsize(), global_count))
+                    logging.debug(
+                        "<< {} break loop-3. G:{}".format(task_q.qsize(), global_count)
+                    )
                     break
                 elif task_q.qsize() == 0 and global_count.get_val() != 0:
                     # consumer_done.set()
                     time.sleep(5)
-                    quota_avail_event.notifyAll() #TODO this is set when a build/job fails
-                    logging.debug('>> notify quota-thread:True G:{}'.format(global_count))
+                    quota_avail_event.notifyAll()  # TODO this is set when a build/job fails
+                    logging.debug(
+                        ">> notify quota-thread:True G:{}".format(global_count)
+                    )
                     if consumer_done.isSet():
-                        logging.debug('===EXIT===')
-                        logging.debug('<< {} break loop-4. G:{}'.format(task_q.qsize(), global_count))
+                        logging.debug("===EXIT===")
+                        logging.debug(
+                            "<< {} break loop-4. G:{}".format(
+                                task_q.qsize(), global_count
+                            )
+                        )
                         break
                 else:
-                    logging.debug('{} doing other things'.format(task_q.qsize()))
-    logging.info('{} EXITING'.format(task_q.qsize()))
+                    logging.debug("{} doing other things".format(task_q.qsize()))
+    logging.info("{} EXITING".format(task_q.qsize()))
 
 
 def quota_check(quota_name, quota_event, consumer_done, task_q, global_count):
-    logging.info('STARTING')
-    logging.debug('quota_name : {}'.format(quota_name))
+    logging.info("STARTING")
+    logging.debug("quota_name : {}".format(quota_name))
     _running = True
     if quota_name != "":
         while _running and True:
-            logging.debug('[{}] waiting for resource-thread. G:{}'.format(task_q.qsize(), global_count))
+            logging.debug(
+                "[{}] waiting for resource-thread. G:{}".format(
+                    task_q.qsize(), global_count
+                )
+            )
             if consumer_done.isSet():
-                logging.debug('[{}] consumer_done is set. break loop-1'.format(task_q.qsize()))
+                logging.debug(
+                    "[{}] consumer_done is set. break loop-1".format(task_q.qsize())
+                )
                 _running = False
                 break
             with quota_event:
                 if task_q.qsize() == 0 and global_count.get_val() == 0:
-                    logging.debug('[{}] break loop-2. G:{}'.format(task_q.qsize(), global_count))
+                    logging.debug(
+                        "[{}] break loop-2. G:{}".format(task_q.qsize(), global_count)
+                    )
                     _running = False
                     break
                 # ================================
@@ -115,21 +152,27 @@ def quota_check(quota_name, quota_event, consumer_done, task_q, global_count):
         # NO quota resource exists. Assume unlimited.
         while True:
             if consumer_done.isSet():
-                logging.debug('[{}] break loop-3'.format(task_q.qsize()))
+                logging.debug("[{}] break loop-3".format(task_q.qsize()))
                 break
             with quota_event:
                 # notify resource-thread
                 quota_event.notifyAll()
-                logging.debug('>> [{}] notify resource-thread:True. G:{}'.format(task_q.qsize(), global_count))
+                logging.debug(
+                    ">> [{}] notify resource-thread:True. G:{}".format(
+                        task_q.qsize(), global_count
+                    )
+                )
                 time.sleep(5)
-    logging.info('[{}] EXITING'.format(task_q.qsize()))
+    logging.info("[{}] EXITING".format(task_q.qsize()))
+
 
 def load_plugin(name):
     mod = __import__("plugin_%s" % name)
     return mod
 
+
 def event_loop(resource, bloom, object_map, task_q, global_count):
-    logging.info('STARTING')
+    logging.info("STARTING")
     control = 1
     _running = True
     host = client.Configuration().host
@@ -144,16 +187,25 @@ def event_loop(resource, bloom, object_map, task_q, global_count):
     # ----------------------------------
     while _running and control != -1:
         try:
-            for event, code in stream(host=host, resource=resource, authorization=api_key["authorization"],
-                                      namespace=namespace, tls_verify=False):
+            for event, code in stream(
+                host=host,
+                resource=resource,
+                authorization=api_key["authorization"],
+                namespace=namespace,
+                tls_verify=False,
+            ):
                 control = code
                 if type(event) is dict and control == 1:
                     # ----------------------------------
                     #           event loop - process
                     # ----------------------------------
-                    process_events(event, resource, bloom, object_map, task_q, global_count)
+                    process_events(
+                        event, resource, bloom, object_map, task_q, global_count
+                    )
                 if task_q.qsize() == 0 and global_count.get_val() == 0:
-                    logging.debug('[{}] break loop-1. G:{}'.format(task_q.qsize(), global_count))
+                    logging.debug(
+                        "[{}] break loop-1. G:{}".format(task_q.qsize(), global_count)
+                    )
                     _running = False
                     break
                 if control == -1:
@@ -166,7 +218,9 @@ def event_loop(resource, bloom, object_map, task_q, global_count):
                 logging.debug("stream terminated 2.......")
                 control = 1
                 if task_q.qsize() == 0 and global_count.get_val() == 0:
-                    logging.debug('[{}] break loop-2. G:{}'.format(task_q.qsize(), global_count))
+                    logging.debug(
+                        "[{}] break loop-2. G:{}".format(task_q.qsize(), global_count)
+                    )
                     _running = False
                     break
                 continue
@@ -175,29 +229,28 @@ def event_loop(resource, bloom, object_map, task_q, global_count):
 
 
 def main(token_file=None, cert_file=None, config_file=None):
-    logging.basicConfig(level=logging.DEBUG, format='(%(threadName)-9s) %(message)s',)
+    logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
     # logging.getLogger("requests").setLevel(logging.CRITICAL)
     logging.getLogger("urllib3").setLevel(logging.CRITICAL)
-
 
     kubernetes_verify_tls = get_param("KUBERNETES_VERIFY_TLS", None, "0")
     kubernetes_verify_tls = bool(int(kubernetes_verify_tls))
 
     # Load in-cluster configuration that is exposed by OpenShift/k8s configuration.
-    InClusterConfigLoader(token_filename=_get_incluster_token_file(token_file=token_file),
-                          cert_filename=_get_incluster_ca_file(ca_file=cert_file),
-                          environ=os.environ).load_and_set()
+    InClusterConfigLoader(
+        token_filename=_get_incluster_token_file(token_file=token_file),
+        cert_filename=_get_incluster_ca_file(ca_file=cert_file),
+        environ=os.environ,
+    ).load_and_set()
 
     # We need to explicitly set whether we want to verify SSL/TLS connection to the master.
     configuration = client.Configuration()
     configuration.verify_ssl = kubernetes_verify_tls
 
-
     ocp_client = DynamicClient(client.ApiClient(configuration=configuration))
     host = client.Configuration().host
     api_key = client.Configuration().api_key
     namespace = get_namespace()
-
 
     plugin = TensorflowBuildPlugin()
     # login_checks = [check_none(v) for v in [OCP_URL, DEFAULT_NAMESPACE, ACCESS_TOKEN]]
@@ -208,7 +261,7 @@ def main(token_file=None, cert_file=None, config_file=None):
     # Load BUILD_MAP
     build_map = os.getenv(ENV_BUILD_MAP, "{}")
     build_map = json.loads(build_map)
-    if build_map == "{}":
+    if str(build_map) == "{}":
         build_map = load_json_file(config_file)
 
     if not build_map:
@@ -224,14 +277,21 @@ def main(token_file=None, cert_file=None, config_file=None):
     for py_version, os_details in build_map.items():
         for os_version, image_details in os_details.items():
             try:
-                application_build_name = "tf-{}-build-image-{}".format(os_version.lower(),
-                                                                           py_version.replace('.', ''))
-                application_name = 'tf-{}-build-job-{}'.format(os_version.lower(), py_version.replace('.', ''))
-                builder_imagestream = '{}:{}'.format(application_build_name, DEFAULT_IMAGE_VERSION)
+                application_build_name = "tf-{}-build-image-{}".format(
+                    os_version.lower(), py_version.replace(".", "")
+                )
+                application_name = "tf-{}-build-job-{}".format(
+                    os_version.lower(), py_version.replace(".", "")
+                )
+                builder_imagestream = "{}:{}".format(
+                    application_build_name, DEFAULT_IMAGE_VERSION
+                )
                 nb_python_ver = py_version
-                docker_file_path = 'Dockerfile.{}'.format(os_version.lower())
+                docker_file_path = "Dockerfile.{}".format(os_version.lower())
                 logging.debug("-------------------VARIABLES-------------------------")
-                logging.debug("APPLICATION_BUILD_NAME: {}".format(application_build_name))
+                logging.debug(
+                    "APPLICATION_BUILD_NAME: {}".format(application_build_name)
+                )
                 logging.debug("APPLICATION_NAME: {}".format(application_name))
                 logging.debug("BUILDER_IMAGESTREAM: {}".format(builder_imagestream))
                 logging.debug("PYTHON VERSION: {}".format(nb_python_ver))
@@ -240,45 +300,69 @@ def main(token_file=None, cert_file=None, config_file=None):
                     # self.__dict__[var_key] = var_val
                     logging.debug("{}: {}".format(var_key, var_val))
                 logging.debug("-----------------------------------------------------")
-                imagestream_template = plugin.fill_imagestream_template(ims_name=application_build_name)
-                imagestream_list.append({"kind": "ImageStream",
-                                         "object": imagestream_template,
-                                         "trigger_count": 0,
-                                         "retrigger": False})
-                job_template = plugin.fill_job_template1(application_name=application_name,
-                                                 builder_imagestream=builder_imagestream,
-                                                 nb_python_ver=nb_python_ver, image_details=image_details)
+                imagestream_template = plugin.fill_imagestream_template(
+                    ims_name=application_build_name
+                )
+                imagestream_list.append(
+                    {
+                        "kind": "ImageStream",
+                        "object": imagestream_template,
+                        "trigger_count": 0,
+                        "retrigger": False,
+                    }
+                )
+                job_template = plugin.fill_job_template1(
+                    application_name=application_name,
+                    builder_imagestream=builder_imagestream,
+                    nb_python_ver=nb_python_ver,
+                    image_details=image_details,
+                )
                 object_map[application_name] = job_template
                 job_list.append(job_template)
-                build_template = plugin.fill_buildconfig_template1(build_name=application_build_name,
-                                                           docker_file_path=docker_file_path,
-                                                           nb_python_ver=nb_python_ver,
-                                                           image_details=image_details)
+                build_template = plugin.fill_buildconfig_template1(
+                    build_name=application_build_name,
+                    docker_file_path=docker_file_path,
+                    nb_python_ver=nb_python_ver,
+                    image_details=image_details,
+                )
                 object_map[application_build_name] = build_template
 
-                buildconfig_list.append({"kind": "BuildConfig",
-                                         "object": build_template,
-                                         "trigger_count": 0,
-                                         "retrigger": False,
-                                         "application_name": application_name,
-                                         "builder_imagestream": builder_imagestream,
-                                         "nb_python_ver": nb_python_ver})
+                buildconfig_list.append(
+                    {
+                        "kind": "BuildConfig",
+                        "object": build_template,
+                        "trigger_count": 0,
+                        "retrigger": False,
+                        "application_name": application_name,
+                        "builder_imagestream": builder_imagestream,
+                        "nb_python_ver": nb_python_ver,
+                    }
+                )
             except Exception as e:
-                logging.error('Exception: ', e)
-                logging.error('Error in Tensorflow Build or Job trigger! Please refer the above log, Starting the next '
-                          'one in queue!')
+                logging.error("Exception: ", e)
+                logging.error(
+                    "Error in Tensorflow Build or Job trigger! Please refer the above log, Starting the next "
+                    "one in queue!"
+                )
 
     for ims in imagestream_list:
         ims_name = ims["object"]["metadata"]["name"]
 
-        ims_exist, ims_response = get_imagestream(req_url=host, req_headers=get_header(api_key),
-                                                  namespace=namespace,
-                                                  imagestream_name=ims_name)
+        ims_exist, ims_response = get_imagestream(
+            req_url=host,
+            req_headers=get_header(api_key),
+            namespace=namespace,
+            imagestream_name=ims_name,
+        )
         if not ims_exist:
-            generated_img = create_imagestream(req_url=host, req_headers=get_header(api_key), namespace=namespace,
-                                               imagestream=ims["object"])
+            generated_img = create_imagestream(
+                req_url=host,
+                req_headers=get_header(api_key),
+                namespace=namespace,
+                imagestream=ims["object"],
+            )
             if not generated_img:
-                raise Exception('Image could not be generated for {}'.format(ims_name))
+                raise Exception("Image could not be generated for {}".format(ims_name))
 
     quota_event = threading.Condition()
     done_event = threading.Event()
@@ -290,22 +374,26 @@ def main(token_file=None, cert_file=None, config_file=None):
     for y in buildconfig_list:
         task_q.put(y)
 
-
     # global_count.set_val(task_q.qsize())
     logging.debug("Q size {}".format(task_q.qsize()))
     quota_name = get_param("QUOTA_NAME", None, DEFAULT_QUOTA_NAME)
-    quota_thread = threading.Thread(name='quota-thread',
-                                    target=quota_check,
-                                    args=(quota_name, quota_event, done_event, task_q, global_count))
+    quota_thread = threading.Thread(
+        name="quota-thread",
+        target=quota_check,
+        args=(quota_name, quota_event, done_event, task_q, global_count),
+    )
 
+    resource_thread = threading.Thread(
+        name="resource-thread",
+        target=create_resource,
+        args=(quota_event, done_event, task_q, global_count, object_map),
+    )
 
-    resource_thread = threading.Thread(name='resource-thread',
-                                       target=create_resource,
-                                       args=(quota_event, done_event, task_q, global_count, object_map))
-
-    event_thread = threading.Thread(name='event-thread',
-                                    target=event_loop,
-                                    args=("events", bloom, object_map, task_q, global_count))
+    event_thread = threading.Thread(
+        name="event-thread",
+        target=event_loop,
+        args=("events", bloom, object_map, task_q, global_count),
+    )
 
     # event_thread.daemon = True
     event_thread.start()
@@ -315,14 +403,16 @@ def main(token_file=None, cert_file=None, config_file=None):
     event_thread.join()
     resource_thread.join()
     quota_thread.join()
-    logging.debug('END')
+    logging.debug("END")
 
 
 def dev_test():
     dirname = os.path.dirname(__file__)
     token_file = os.path.join(dirname, "../test/kubernetes.io/serviceaccount/token")
     cert_file = os.path.join(dirname, "../test/kubernetes.io/serviceaccount/ca.crt")
-    namespace_file = os.path.join(dirname, "../test/kubernetes.io/serviceaccount/namespace")
+    namespace_file = os.path.join(
+        dirname, "../test/kubernetes.io/serviceaccount/namespace"
+    )
     plugin_config_file = os.path.join(dirname, "./plugins/tensorflow_config.json")
     build_map = "./config.json"
     # This is needed always in pod
@@ -337,6 +427,6 @@ def dev_test():
     main(token_file=token_file, cert_file=cert_file, config_file=build_map)
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    main(config_file=os.path.join(os.path.dirname(__file__), "./config.json"))
     # dev_test()
