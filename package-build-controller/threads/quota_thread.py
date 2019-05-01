@@ -7,10 +7,15 @@ from misc.utils import get_header, get_namespace
 
 
 def process_quota(quota_name, quota_event, task_q):
-    quota_available, avail_cpu, avail_mem = do_resource_requests_check(task_q, quota_name)
+    quota_available, avail_cpu, avail_mem = do_resource_requests_check(
+        task_q, quota_name
+    )
     if task_q.qsize() == 0:
-        logging.debug('[{}] task_q empty. memory={}; cpu={}'.format(task_q.qsize(), avail_mem,
-                                                                    avail_cpu))
+        logging.debug(
+            "[{}] task_q empty. memory={}; cpu={}".format(
+                task_q.qsize(), avail_mem, avail_cpu
+            )
+        )
         time.sleep(3)
         # event_is_set = quota_event.wait(2)
         # logging.debug('>> [{}] notify resource-thread:{}.'.format(task_q.qsize(), event_is_set))
@@ -19,17 +24,26 @@ def process_quota(quota_name, quota_event, task_q):
         if not quota_available:
             # We are looping for new resources to be available
             event_is_set = quota_event.wait(2)
-            logging.debug('[{}] Resources NOT available; memory={}; cpu={}'.format(task_q.qsize(),
-                                                                                     avail_mem,
-                                                                                     avail_cpu))
-            logging.debug('>> [{}] notify resource-thread:{}.'.format(task_q.qsize(), event_is_set))
+            logging.debug(
+                "[{}] Resources NOT available; memory={}; cpu={}".format(
+                    task_q.qsize(), avail_mem, avail_cpu
+                )
+            )
+            logging.debug(
+                ">> [{}] notify resource-thread:{}.".format(
+                    task_q.qsize(), event_is_set
+                )
+            )
 
         else:
             # notify resource-thread
             quota_event.notifyAll()
-            logging.debug('[{}] Resources available; memory={}; cpu={}'.format(task_q.qsize(), avail_mem,
-                                                                                avail_cpu))
-            logging.debug('>> [{}] notify resource-thread:True.'.format(task_q.qsize()))
+            logging.debug(
+                "[{}] Resources available; memory={}; cpu={}".format(
+                    task_q.qsize(), avail_mem, avail_cpu
+                )
+            )
+            logging.debug(">> [{}] notify resource-thread:True.".format(task_q.qsize()))
             time.sleep(5)
 
 
@@ -38,16 +52,19 @@ def do_resource_requests_check(task_q, quota_name):
     api_key = client.Configuration().api_key
     namespace = get_namespace()
     if task_q.qsize() == 0:
-        quota_available, avail_mem, avail_cpu = is_resource_available(req_url=host,
-                                                                      req_headers=get_header(api_key),
-                                                                      namespace=namespace,
-                                                                      quota_name=quota_name,
-                                                                      resource_mem=0,
-                                                                      resource_cpu=0)
-        logging.debug('[{}] quota_available={}, avail_mem={}, avail_cpu={}'.format(task_q.qsize(),
-                                                                                      quota_available,
-                                                                                      avail_mem,
-                                                                                      avail_cpu))
+        quota_available, avail_mem, avail_cpu = is_resource_available(
+            req_url=host,
+            req_headers=get_header(api_key),
+            namespace=namespace,
+            quota_name=quota_name,
+            resource_mem=0,
+            resource_cpu=0,
+        )
+        logging.debug(
+            "[{}] quota_available={}, avail_mem={}, avail_cpu={}".format(
+                task_q.qsize(), quota_available, avail_mem, avail_cpu
+            )
+        )
         return quota_available, avail_cpu, avail_mem
     else:
         # This is like peek() instead of qq.get()
@@ -60,38 +77,59 @@ def do_resource_requests_check(task_q, quota_name):
         quota_available = True
         spec = None
 
-        if resource and resource != "-1" and resource["kind"] == 'Job':
+        if resource and resource != "-1" and resource["kind"] == "Job":
             # TODO a Job can have many containers. Find for each container.
-            spec = resource["spec"]["template"]["spec"]['containers'][0]
-        elif resource and resource != "-1" and resource["kind"] == 'BuildConfig':
+            spec = resource["spec"]["template"]["spec"]["containers"][0]
+        elif resource and resource != "-1" and resource["kind"] == "BuildConfig":
             spec = resource.get("spec", None)
 
-        if (spec and "resources" in spec
-            and ("requests" in spec["resources"]) and
-                (spec["resources"]["requests"]["cpu"] or spec["resources"]["requests"]["memory"])):
+        if (
+            spec
+            and "resources" in spec
+            and ("requests" in spec["resources"])
+            and (
+                spec["resources"]["requests"]["cpu"]
+                or spec["resources"]["requests"]["memory"]
+            )
+        ):
             mem_requested = spec["resources"]["limits"]["memory"]
             cpu_requested = spec["resources"]["limits"]["cpu"]
-            logging.debug('[{}] mem_requested={}; cpu_requested={} by {} '.format(task_q.qsize(),
-                                                                               mem_requested,
-                                                                               cpu_requested,
-                                                                               resource["metadata"]["name"]))
+            logging.debug(
+                "[{}] mem_requested={}; cpu_requested={} by {} ".format(
+                    task_q.qsize(),
+                    mem_requested,
+                    cpu_requested,
+                    resource["metadata"]["name"],
+                )
+            )
         if mem_requested and cpu_requested:
-            quota_available, avail_mem, avail_cpu = is_resource_available(req_url=host,
-                                                                          req_headers=get_header(api_key),
-                                                                          namespace=namespace,
-                                                                          quota_name=quota_name,
-                                                                          resource_mem=mem_requested,
-                                                                          resource_cpu=cpu_requested)
-            logging.debug('[{}] quota_available={}, avail_mem={}, avail_cpu={}'.format(task_q.qsize(),
-                                                                                      quota_available,
-                                                                                      avail_mem,
-                                                                                      avail_cpu))
+            quota_available, avail_mem, avail_cpu = is_resource_available(
+                req_url=host,
+                req_headers=get_header(api_key),
+                namespace=namespace,
+                quota_name=quota_name,
+                resource_mem=mem_requested,
+                resource_cpu=cpu_requested,
+            )
+            logging.debug(
+                "[{}] quota_available={}, avail_mem={}, avail_cpu={}".format(
+                    task_q.qsize(), quota_available, avail_mem, avail_cpu
+                )
+            )
         return quota_available, avail_cpu, avail_mem
 
 
-def is_resource_available(req_url, req_headers, namespace, quota_name,
-                          resource_mem=MIN_MEMORY, resource_cpu=MIN_CPU):
-    avail_mem, avail_cpu = get_avail_mem_cpu(req_url, req_headers, namespace, quota_name)
+def is_resource_available(
+    req_url,
+    req_headers,
+    namespace,
+    quota_name,
+    resource_mem=MIN_MEMORY,
+    resource_cpu=MIN_CPU,
+):
+    avail_mem, avail_cpu = get_avail_mem_cpu(
+        req_url, req_headers, namespace, quota_name
+    )
 
     if avail_mem == "0" and avail_cpu == "0":
         return False, avail_mem, avail_cpu
@@ -117,15 +155,15 @@ def get_avail_mem_cpu(req_url, req_headers, namespace, quota_name):
     # print("Status code for resource quota GET request: ", response.status_code)
     if response.status_code == 200:
         # print("Resource Quota: ", response.json())
-        if 'status' in response.json() and response.json().get('status'):
-            quota = response.json().get('status')
+        if "status" in response.json() and response.json().get("status"):
+            quota = response.json().get("status")
             # print("Used Quota: \n CPU:{} \n Memory:{}".format(quota['used'].get("limits.cpu", ""),
             #                                                  quota['used'].get("limits.memory", "")))
 
-            used_mem = quota['used'].get("limits.memory", "")
-            used_cpu = quota['used'].get("limits.cpu", "")
-            hard_mem = quota['hard'].get("limits.memory", "")
-            hard_cpu = quota['hard'].get("limits.cpu", "")
+            used_mem = quota["used"].get("limits.memory", "")
+            used_cpu = quota["used"].get("limits.cpu", "")
+            hard_mem = quota["hard"].get("limits.memory", "")
+            hard_cpu = quota["hard"].get("limits.cpu", "")
 
             hard_mem_int = get_mem_gi_int(hard_mem)
             used_mem_int = get_mem_gi_int(used_mem)
@@ -139,24 +177,25 @@ def get_avail_mem_cpu(req_url, req_headers, namespace, quota_name):
 def get_mem_gi_int(used_mem):
     """returns int Gi value"""
     used_mem_int = 0
-    if 'Gi' in used_mem:
-        used_mem_int = int(used_mem.strip('Gi'));
-    elif 'Mi' in used_mem:
-        used_mem_int = int(used_mem.strip('Mi')) * 0.001
+    if "Gi" in used_mem:
+        used_mem_int = int(used_mem.strip("Gi"))
+    elif "Mi" in used_mem:
+        used_mem_int = int(used_mem.strip("Mi")) * 0.001
     return used_mem_int
 
 
 def get_cpu_int(used_cpu):
-    if 'm' in used_cpu:
-        used_int_cpu = int(used_cpu.strip('m')) * 0.001
+    if "m" in used_cpu:
+        used_int_cpu = int(used_cpu.strip("m")) * 0.001
     else:
-        used_int_cpu = int(used_cpu.strip('m'))
+        used_int_cpu = int(used_cpu.strip("m"))
     return used_int_cpu
 
 
 def get_quota_endpoint(req_url, namespace, quota_name):
     if quota_name:
-        return '{}/api/v1/namespaces/{}/resourcequotas/{}'.format(req_url, namespace,
-                                                                  quota_name)
+        return "{}/api/v1/namespaces/{}/resourcequotas/{}".format(
+            req_url, namespace, quota_name
+        )
     else:
-        return '{}/api/v1/namespaces/{}/resourcequotas'.format(req_url, namespace)
+        return "{}/api/v1/namespaces/{}/resourcequotas".format(req_url, namespace)
