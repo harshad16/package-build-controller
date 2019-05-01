@@ -9,23 +9,27 @@ from misc.utils import get_api
 
 def get_api_url(host, namespace, resource, bool_watch=True):
     if bool_watch:
-        return "{}/{}/v1/namespaces/{}/{}?watch=true".format(host, get_api(resource), namespace, resource)
+        return "{}/{}/v1/namespaces/{}/{}?watch=true".format(
+            host, get_api(resource), namespace, resource
+        )
     else:
-        return "{}/{}/v1/namespaces/{}/{}".format(host, get_api(resource), namespace, resource)
+        return "{}/{}/v1/namespaces/{}/{}".format(
+            host, get_api(resource), namespace, resource
+        )
 
 
 def test_endpoint(host, namespace, resource, req_headers, tls_verify=False):
     url = get_api_url(host, namespace, resource, bool_watch=False)
     print("test_endpoint url = {}".format(url))
-    test_req = requests.Request("GET", url,
-                                headers=req_headers,
-                                params=""
-                                ).prepare()
+    test_req = requests.Request("GET", url, headers=req_headers, params="").prepare()
     session = requests.session()
     test_resp = session.send(test_req, verify=tls_verify)
     if test_resp.status_code != 200:
-        raise Exception("Unable to contact OpenShift API at {0}. Message from server: {1}".format(url,
-                                                                                                  test_resp.text))
+        raise Exception(
+            "Unable to contact OpenShift API at {0}. Message from server: {1}".format(
+                url, test_resp.text
+            )
+        )
     return test_resp
 
 
@@ -34,23 +38,25 @@ def stream(host, namespace, resource, authorization, tls_verify=False):
     print("stream url = {}".format(url))
     start = datetime.datetime.now()
     session = requests.Session()
-    req = requests.Request("GET", url,
-                           headers={"Authorization": authorization},
-                           params=""
-                           ).prepare()
+    req = requests.Request(
+        "GET", url, headers={"Authorization": authorization}, params=""
+    ).prepare()
 
     resp = session.send(req, stream=True, verify=tls_verify)
 
     if resp.status_code != 200:
-        raise Exception("Unable to contact OpenShift API at {0}. Message from server: {1}".format(url,
-                                                                                                  resp.text))
+        raise Exception(
+            "Unable to contact OpenShift API at {0}. Message from server: {1}".format(
+                url, resp.text
+            )
+        )
     try:
         lines = resp.iter_lines()  # chunk_size=1
         _ = next(lines)
         for line in lines:
             if line:
                 try:
-                    yield json.loads(line.decode('utf-8')), 1
+                    yield json.loads(line.decode("utf-8")), 1
                 except Exception as e:
                     raise Exception("Watcher error 1: {0}".format(e))
         return json.loads("{}"), -1
@@ -58,7 +64,7 @@ def stream(host, namespace, resource, authorization, tls_verify=False):
         raise Exception("Watcher error 2: {0}".format(e))
     finally:
         end = datetime.datetime.now()
-        diff = end-start
+        diff = end - start
         print("===================")
         print("ran for {} seconds ".format(diff.seconds))
         print("===================")
@@ -104,7 +110,7 @@ def stream(host, namespace, resource, authorization, tls_verify=False):
 }
 """
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s")
     urllib3.disable_warnings()
     bloom = BloomFilter(10000, 0.001)
