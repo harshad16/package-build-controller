@@ -1,5 +1,5 @@
+import os
 import json
-
 import requests
 
 from misc.const import (
@@ -60,6 +60,9 @@ class TensorflowBuildPlugin:
     ):
         config_copy = self.config.copy()
         config_copy.update(image_details)
+        config_copy["SESHETA_GITHUB_ACCESS_TOKEN"] = os.getenv(
+            "SESHETA_GITHUB_ACCESS_TOKEN"
+        )
         new_param_dict = config_copy
         buildconfig = {
             "kind": "BuildConfig",
