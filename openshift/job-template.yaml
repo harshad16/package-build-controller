@@ -1,0 +1,66 @@
+---
+apiVersion: v1
+kind: Template
+metadata:
+  annotations:
+    description: Thoth:Package-build-controller
+    openshift.io/display-name: Thoth:Package-build-controller
+    tags: thoth, package-build-controller, tensorflow-s2i-build
+    template.openshift.io/documentation-url: >
+      https://github.com/thoth-station/package-build-controller
+    template.openshift.io/long-description: >
+      This template defines resources needed to deploy Thoth
+      package-build-controller on OpenShift.
+    template.openshift.io/provider-display-name: Red Hat, Inc.
+    version: 1.0.0
+  labels:
+    app: thoth
+    component: package-build-controller
+    template: package-build-controller-job
+  name: package-build-controller-job
+
+objects:
+- apiVersion: batch/v1
+  kind: Job
+  metadata:
+    name: package-build-controller-job
+    labels:
+      app: thoth
+      component: package-build-controller
+  spec:
+    parallelism: 1
+    completions: 1
+    template:
+      spec:
+        serviceAccountName: package-build-controller
+        containers:
+        - image: package-build-controller-build:${IMAGE_STREAM_TAG}
+          name: tensorflow-release-job
+          env:
+          - name: SESHETA_GITHUB_ACCESS_TOKEN
+            valueFrom:
+              secretKeyRef:
+                key: SESHETA_GITHUB_ACCESS_TOKEN
+                name: package-build-controller-secret
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "1"
+            limits:
+              memory: "1Gi"
+              cpu: "1"
+        restartPolicy: Never
+        lookupPolicy:
+          local: true
+
+parameters:
+  - description: Tag of the output ImageStream for the resulting container image
+    displayName: ImageStream Tag
+    name: IMAGE_STREAM_TAG
+    required: true
+    value: latest
+
+  - description: Gitub oauth token for clone and submit issue
+    displayName: Github Oauth token
+    name: SESHETA_GITHUB_ACCESS_TOKEN
+    required: true
