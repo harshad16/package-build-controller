@@ -1,0 +1,60 @@
+---
+- name: Playbook to provision package-build-controller
+  tags:
+    - openshift
+    - thoth
+
+  hosts: localhost
+  vars:
+    OCP_URL: "{{ lookup('env','OCP_URL') }}"
+    OCP_TOKEN: "{{ lookup('env','OCP_TOKEN') }}"
+    OCP_NAMESPACE: "{{ lookup('env','OCP_NAMESPACE') }}"
+
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Login to OpenShift using provided token
+      shell: >
+        oc login {{ OCP_URL }} --insecure-skip-tls-verify=true
+        --token {{ OCP_TOKEN }}
+      changed_when: false
+
+    - name: Make sure to use project {{ OCP_NAMESPACE }}
+      command: oc project {{ OCP_NAMESPACE }}
+      register: project_exists
+      ignore_errors: true
+
+    - name: Create package-build-controller BuildConfig
+      shell: >
+        oc process --namespace {{ OCP_NAMESPACE }}
+        --filename=../openshift/buildconfig-template.yaml
+        -p GENERIC_SECRET={{ GENERIC_SECRET | default('tf-build-secret', true) }}
+        | oc apply --namespace {{ OCP_NAMESPACE }} -f -
+
+    - name: Start package-build-controller Build
+      shell: >
+        oc start-build --namespace {{ OCP_NAMESPACE }}
+        package-build-controller-build
+
+    - name: check if required package-build-controller secret exists
+      command: >
+        oc get secret --namespace {{ OCP_NAMESPACE }}
+        package-build-controller-secret
+      register: secret_exists
+      ignore_errors: true
+
+    - name: create package-build-controller Secret
+      shell: >
+        oc create secret --namespace {{ OCP_NAMESPACE }}
+        generic package-build-controller-secret
+        --from-literal=SESHETA_GITHUB_ACCESS_TOKEN="{{ SESHETA_GITHUB_ACCESS_TOKEN }}"
+        --type=opaque
+      when: secret_exists is failed
+
+    - name: create package-build-controller job
+      shell: >
+        oc process --namespace {{ OCP_NAMESPACE }}
+        --filename=../openshift/job-template.yaml
+        -p SESHETA_GITHUB_ACCESS_TOKEN="{{ SESHETA_GITHUB_ACCESS_TOKEN }}"
+        | oc apply  --namespace {{ OCP_NAMESPACE }} -f -
+      ignore_errors: true
