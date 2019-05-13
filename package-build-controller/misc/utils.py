@@ -1,8 +1,14 @@
 import json
 import os
 import threading
-from .const import SCHEMA, DEFAULT_NAMESPACE_FILE, DEFAULT_NAMESPACE ,ENV_NAMESPACE_FILE,\
-    SERVICE_TOKEN_FILENAME, SERVICE_CERT_FILENAME
+from .const import (
+    SCHEMA,
+    DEFAULT_NAMESPACE_FILE,
+    DEFAULT_NAMESPACE,
+    ENV_NAMESPACE_FILE,
+    SERVICE_TOKEN_FILENAME,
+    SERVICE_CERT_FILENAME,
+)
 
 
 def load_json_file(file_name):
@@ -22,7 +28,7 @@ def is_value_in_label(labels, value):
     if len(labels) == 0:
         return None
     if value in labels.values():
-            return value
+        return value
     else:
         return None
 
@@ -182,38 +188,44 @@ def flatten(lst):
 
 def get_api(typee):
     for x in flatten(SCHEMA):
-        if x['type'] == typee:
-            return x['api']
+        if x["type"] == typee:
+            return x["api"]
 
 
 def get_kind(typee):
     for x in flatten(SCHEMA):
-        if x['type'] == typee:
-            return x['kind']
+        if x["type"] == typee:
+            return x["kind"]
+
 
 def get_json_from_file(pfile, default=None):
     try:
         # 1) open file and extract value
-        with open(pfile, 'r') as f:
+        with open(pfile, "r") as f:
             return json.load(f)
     except FileNotFoundError as exc:
         if default:
             # 3) use the default value in constants.py
             return default
         else:
-            raise KeyError("default value not defined & json file: {} has issue.".format(exc))
+            raise KeyError(
+                "default value not defined & json file: {} has issue.".format(exc)
+            )
+
 
 def get_param_from_file(pfile, default=None):
     try:
         # 1) open file and extract value
-        with open(pfile, 'r') as f:
+        with open(pfile, "r") as f:
             return f.read()
     except FileNotFoundError as exc:
         if default:
             # 3) use the default value in constants.py
             return default
         else:
-            raise KeyError("default value not defined & file: {} not found.".format(exc))
+            raise KeyError(
+                "default value not defined & file: {} not found.".format(exc)
+            )
 
 
 def get_param_from_os(param):
@@ -232,10 +244,12 @@ def get_param_from_key(param, param_dict):
             # 2) get from config.json
             return param_dict.get(param.upper())
         else:
-            raise KeyError("{} default value not defined in env or in dict".format(param.upper()))
+            raise KeyError(
+                "{} default value not defined in env or in dict".format(param.upper())
+            )
 
 
-def get_param(param, param_dict,  default):
+def get_param(param, param_dict, default):
     try:
         # 1) all globals values maybe in the template.So pickup from environment
         return os.environ[param.upper()]
@@ -248,7 +262,11 @@ def get_param(param, param_dict,  default):
                 # 3) use the default value in constants.py
                 return default
             else:
-                raise KeyError("{} default value not defined in env or const.py".format(param.upper()))
+                raise KeyError(
+                    "{} default value not defined in env or const.py".format(
+                        param.upper()
+                    )
+                )
 
 
 def name(obj, calling_locals=locals()):
@@ -271,7 +289,9 @@ def _get_incluster_ca_file(ca_file=None):
 
 
 def get_namespace():
-    namespace_file = get_param(param=ENV_NAMESPACE_FILE, param_dict=None, default=DEFAULT_NAMESPACE_FILE)
+    namespace_file = get_param(
+        param=ENV_NAMESPACE_FILE, param_dict=None, default=DEFAULT_NAMESPACE_FILE
+    )
     namespace = get_param_from_file(namespace_file, DEFAULT_NAMESPACE)
     return namespace
 
@@ -279,7 +299,7 @@ def get_namespace():
 def get_namespace1(nfile):
     """Get namespace from namespace file."""
     try:
-        with open(nfile, 'r') as namespace:
+        with open(nfile, "r") as namespace:
             return namespace.read()
     except FileNotFoundError as exc:
         raise FileNotFoundError("Unable to get namespace from namespace file") from exc
@@ -288,26 +308,36 @@ def get_namespace1(nfile):
 def get_service_account_token():
     """Get token from service account token file."""
     try:
-        with open(_get_incluster_token_file(), 'r') as token_file:
+        with open(_get_incluster_token_file(), "r") as token_file:
             return token_file.read()
     except FileNotFoundError as exc:
-        raise FileNotFoundError("Unable to get service account token, please check "
-                                "that service has service account assigned with exposed token") from exc
+        raise FileNotFoundError(
+            "Unable to get service account token, please check "
+            "that service has service account assigned with exposed token"
+        ) from exc
 
 
 def get_header(api_key_dict):
     auth = api_key_dict["authorization"]
     header = {
-        'Content-Type': 'application/json',
-        'Authorization': auth,
-        'Accept': 'application/json',
-        'Connection': 'close'
+        "Content-Type": "application/json",
+        "Authorization": auth,
+        "Accept": "application/json",
+        "Connection": "close",
     }
     return header
 
 
+def get_job_pod(job_name, pod_json):
+    for meta_data in pod_json.get("items", []):
+        if job_name in meta_data["metadata"].get("name", ""):
+            return meta_data["metadata"].get("name")
+    return
+
+
 class ResourceCounter:
     """Thread-safe incrementing counter. """
+
     def __init__(self, initial=0):
         """Initialize a counter to given initial value (default 0)."""
         self.value = initial

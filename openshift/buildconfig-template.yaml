@@ -1,0 +1,106 @@
+---
+apiVersion: v1
+kind: Template
+metadata:
+  annotations:
+    description: Thoth:Package-build-controller
+    openshift.io/display-name: Thoth:Package-build-controller
+    tags: thoth, package-build-controller, tensorflow-s2i-build
+    template.openshift.io/documentation-url: >
+      https://github.com/thoth-station/package-build-controller
+    template.openshift.io/long-description: >
+      This template defines resources needed to deploy Thoth
+      package-build-controller on OpenShift.
+    template.openshift.io/provider-display-name: Red Hat, Inc.
+    version: 1.0.0
+  labels:
+    app: thoth
+    component: package-build-controller
+    template: package-build-controller-build
+  name: package-build-controller-build
+
+objects:
+  # IMAGESTREAM
+  - apiVersion: image.openshift.io/v1
+    kind: ImageStream
+    metadata:
+      labels:
+        app: thoth
+        component: package-build-controller
+      name: package-build-controller-build
+    spec:
+      name: latest
+      lookupPolicy:
+        local: true
+
+  # BUILD CONFIG
+  - apiVersion: build.openshift.io/v1
+    kind: BuildConfig
+    metadata:
+      labels:
+        app: thoth
+        component: package-build-controller
+      name: package-build-controller-build
+    spec:
+      output:
+        to:
+          kind: ImageStreamTag
+          name: package-build-controller-build:${IMAGE_STREAM_TAG}
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 500m
+          memory: 512Mi
+      runPolicy: Serial
+      source:
+        git:
+          ref: ${GITHUB_REF}
+          uri: ${GITHUB_URL}
+        type: Git
+      strategy:
+        dockerStrategy:
+          dockerfilePath: Dockerfile
+          noCache: true
+        env:
+          - name: KUBERNETES_SERVICE_HOST
+            value: "paas.psi.redhat.com"
+          - name: KUBERNETES_SERVICE_PORT
+            value: "443"
+          - name: ENV_PLUGIN_CONFIG_FILE
+            value: "package-build-controller/plugins/tensorflow_config.json"
+          - name: JOB_BACKOFF_LIMIT
+            value: "3"
+        type: Docker
+      triggers:
+        - imageChange: {}
+          type: ImageChange
+        - generic:
+            allowEnv: false
+            secret: ${GENERIC_SECRET}
+          type: Generic
+
+parameters:
+  - description: Git repository for Thoth's Package-Build-Controller
+    displayName: Thoth Package-Build-Controller Git Reference Repo
+    name: GITHUB_URL
+    required: true
+    value: 'https://github.com/harshad16/package-build-controller'
+
+  - description: Git branch for Thoth's Package-Build-Controller repository
+    displayName: Thoth Package-Build-Controller Git Reference Branch
+    name: GITHUB_REF
+    required: true
+    value: master
+
+  - description: Tag of the output ImageStream for the resulting container image
+    displayName: ImageStream Tag
+    name: IMAGE_STREAM_TAG
+    required: true
+    value: latest
+
+  - description: Sercet for the Generic Web-hook
+    displayName: Thoth Package-Build-Controller generic secret
+    name: GENERIC_SECRET
+    required: false

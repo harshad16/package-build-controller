@@ -25,7 +25,7 @@
   "NCCL_INSTALL_PATH": "/usr/local/nccl-2.2",
   "TEST_WHEEL_FILE": "y",
   "TF_GIT_BRANCH": "r1.10",
-  "SESHETA_GITHUB_ACCESS_TOKEN": "28a939a60e7cfb9c9e868e7305f7c21f1a9b05f7",
+  "SESHETA_GITHUB_ACCESS_TOKEN": "",
   "GIT_ISSUE_API_URL" : "https://api.github.com/repos/AICoE/tensorflow-wheels/issues",
   "GIT_RELEASE_REPO": "https://github.com/AICoE/tensorflow-wheels.git",
   "GENERIC_WEBHOOK_SECRET": "tf-build-secret",

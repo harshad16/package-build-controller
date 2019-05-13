@@ -1,13 +1,15 @@
 [[source]]
+name = "pypi"
 url = "https://pypi.org/simple"
 verify_ssl = true
-name = "pypi"
-
-[packages]
-requests = "*"
-pybloom-mirror = "2.0.0"
 
 [dev-packages]
+
+[packages]
+pybloom-mirror = "*"
+requests = "*"
+kubernetes = "*"
+openshift = "*"
 
 [requires]
 python_version = "3.6"
