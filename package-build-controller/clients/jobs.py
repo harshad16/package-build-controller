@@ -71,9 +71,6 @@ def get_job_logs(req_url, req_headers, namespace, job_pod):
     )
     response = requests.get(job_pod_endpoint, headers=req_headers, verify=False)
     if response.status_code == 200:
-        with open("{}.txt".format(job_pod), "w") as f:
-            f.write(response.text)
-        logging.debug("Log of {} {}".format(job_pod, response.text))
         return True, response.text
     else:
         logging.error("Error for job pod log GET request: ".format(response.text))
